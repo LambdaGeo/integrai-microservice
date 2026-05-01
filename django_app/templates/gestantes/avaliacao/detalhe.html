@@ -1,0 +1,763 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load custom_filters %}
+
+{% block content %}
+<div class="container mt-5 d-flex justify-content-center">
+  <div class="col-lg-12 col-md-12">
+
+    <div class="card-gestante text-center border-0">
+
+      {% if gestante.foto %}
+        <img src="{{ gestante.foto.url }}" alt="Foto da gestante" class="gestante-foto">
+      {% else %}
+        <img src="{% static 'assets/imagens/gestante/silhueta.png' %}" alt="Foto padrão" class="gestante-foto">
+      {% endif %}
+
+      <div class="name-edit-group d-flex justify-content-center align-items-center gap-2 mb-2">
+          <h4 class="card-title fw-semibold mb-0">{{ gestante.nome }}</h4>
+
+
+
+          <a href="{% url 'editar_gestante' gestante.id %}"
+             class="btn btn-outline-primary btn-sm d-flex align-items-center gap-1 edit-btn"
+             title="Editar gestante">
+              <i class="fa-solid fa-pen-to-square"></i>
+              <span>Editar</span>
+          </a>
+
+            <a href="{% url 'questionario' gestante.id %}"
+             class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1 edit-btn"
+             title="Avaliar gestante">
+              <i class="fa-solid fa-pen-to-square"></i>
+              <span>Avaliar</span>
+          </a>
+      </div>
+    <p class="mb-4">
+      <strong class="text-muted mb-1">
+        Gestante 
+      </strong>
+      <span class="text-muted mb-1">
+        | Idade: {{ gestante.idade }} anos 
+      </span>
+
+                      {% if gestante.imc %}
+                                <strong class="text-muted mb-1">| IMC:</strong>
+                                <span class="{{ gestante.imc_cor }} text-muted mb-1">
+                                     {{ gestante.imc }}
+                                </span>
+                            {% else %}
+                                <span class="text-muted">IMC indisponível</span>
+                            {% endif %}
+    </p>
+      
+      {% if not ultima_avaliacao or not riscos.integralidade %}
+  <div class="mt-4 d-flex justify-content-center">
+
+    <div class="card-modern -sm p-4 text-center" style="border-radius: 1rem; max-width: 500px;">
+      <h5 class="text-primary mb-2">Nenhuma avaliação registrada ainda</h5>
+
+      <p class="text-muted">
+        Ainda não há informações suficientes para calcular os riscos de saúde da gestante.
+        Faça a primeira avaliação para gerar os indicadores e acompanhar a evolução.
+      </p>
+
+
+
+      <a href="{% url 'questionario' gestante.id %}" class="btn-primary px-4 py-2 mt-3">
+        + Realizar primeira avaliação
+      </a>
+    </div>
+
+  </div>
+
+{% else %}
+  
+
+      <div class="row justify-content-center g-4">
+        
+        <div class="col-lg-6 col-md-10">
+          <div class="card-risco mx-auto">
+             <h5 style="
+        color: #504F8C;
+        font-weight: 700;
+        font-size: 20px;
+        margin-bottom: 18px;
+        letter-spacing: -.02em;
+        ">
+  Riscos para doenças crônicas combinados</h5>
+
+              {% if ultima_avaliacao %}
+
+              <p class="text-muted mt-4">
+                Última avaliação: <strong>{{ ultima_avaliacao.data_aplicacao|date:"d/m/Y" }}</strong>
+              </p>
+            {% else %}
+            <p class="text-muted mt-4">Sem avaliações registradas</p>
+            {% endif %}
+
+            
+            <div class="progress-circle mx-auto" style="--percent: {{ riscos.integralidade.valor }};">
+              <span class="percent-text">{{ riscos.integralidade.valor }}%</span>
+            </div>
+
+            <!-- Botão para abrir a modal -->
+            <div class="mt-3">
+              <button class="btn btn-outline-primary btn-sm"
+                      data-bs-toggle="modal"
+                      data-bs-target="#modalRiscosIndividuais">
+                  Ver riscos individuais
+              </button>
+            </div>
+
+
+
+
+
+            
+          </div>
+
+
+  <div class="card-evolucao shadow-sm mt-3 mb-3 p-4 text-center"
+     style="
+        background: #ffffff;
+        border-radius: 20px;
+        border: 2px solid #E6E6FA;
+     ">
+  
+  <h5 style="
+        color: #504F8C;
+        font-weight: 700;
+        font-size: 18px;
+        margin-bottom: 18px;
+        letter-spacing: -.02em;
+  ">
+    Evolução do risco para doenças crônicas combinados
+  </h5>
+
+  {% if evolucao_riscos_dict.integralidade %}
+    {% with risco=evolucao_riscos_dict.integralidade %}
+
+<p style="
+    font-family: 'Chillax', sans-serif;
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 30px;
+    letter-spacing: -0.05em;
+    color: #504F8C;
+    margin: 0 auto;
+    max-width: 90%;
+">
+    {% comment %}  
+    TEXTO PRINCIPAL — COM TOM ACOLHEDOR E ORIENTATIVO  
+    {% endcomment %}
+
+    {% if risco.delta > 0 %}
+        Houve um aumento de 
+        <span style="color:#E63946">{{ risco.delta|floatformat:0 }}%</span>
+        no risco para doenças crônicas no futuro bebê. <br>
+        Vamos trabalhar juntos nesses fatores? 💛  
+        A <strong>MarIA</strong> pode ajudar você a orientar a {{ gestante.nome }}.
+
+    {% elif risco.delta < 0 %}
+        Parabéns pelo seu trabalho! 🎉  
+        A {{ gestante.nome }} apresentou uma redução de 
+        <span style="color:#06A77D">{{ risco.delta|abs|floatformat:0 }}%</span>
+        no risco para doenças crônicas no futuro bebê.  
+        É um ótimo sinal e com a sua dedicação e o apoio da <strong>MarIA</strong>,  
+        podemos melhorar ainda mais! 💛
+
+    {% else %}
+        O risco da {{ gestante.nome }} se manteve estável em relação ao período anterior.  
+        Mesmo assim, sempre podemos avançar um pouquinho mais.  
+        Conte com a <strong>MarIA</strong> para apoiar você nas próximas orientações 💛
+    {% endif %}
+</p>
+
+    {% endwith %}
+  {% else %}
+    <p style="color: #888; font-size: 16px;">Sem evolução de risco disponível.</p>
+  {% endif %}
+</div>
+
+
+
+        </div>
+        
+        
+        <div class="col-lg-6 col-md-10" id="outrosRiscos">
+
+
+<div class="bg-white shadow-sm rounded-4 p-4 mb-4">
+
+            <h5 style="
+        color: #504F8C;
+        font-weight: 700;
+        font-size: 20px;
+        margin-bottom: 18px;
+        letter-spacing: -.02em;
+  ">Fatores de Risco</h5>
+            {% if riscos.integralidade.fatores %}
+              <div class="fatores-badges d-flex flex-wrap gap-2 justify-content-center mt-3">
+                {% for fator in riscos.integralidade.fatores %}
+                  <span class="badge bg-light text-dark border shadow-sm">{{ fator }}</span>
+                {% endfor %}
+              </div>
+            {% else %}
+              <p class="text-muted text-center mt-3">
+                O modelo não identificou nenhum fator de risco.
+              </p>
+            {% endif %} 
+
+</div>
+
+    
+<div id="balao-maria" class="bg-white shadow-sm rounded-4 p-4 mb-4">
+
+  <div class="d-flex align-items-start">
+    <img src="{% static 'assets/imagens/maria.png' %}"
+         class="rounded-circle me-3"
+         style="width:48px; height:48px;">
+
+    <div class="flex-grow-1">
+      <p id="mensagem-maria"
+         class="text-muted mb-3"
+         style="font-size:0.95rem; line-height:1.4;">
+
+        {% if ultima_avaliacao.status_processamento_llm == 'PENDING' or ultima_avaliacao.status_processamento_llm == 'PROCESSING' %}
+          Oi! Eu sou a <strong>MarIA</strong>.  
+          Estou gerando um <strong>resumo explicativo</strong> sobre os fatores de risco.  
+          Só um instantinho! 😊
+
+        {% elif ultima_avaliacao.status_processamento_llm == 'COMPLETED' %}
+          Oi! Eu sou a <strong>MarIA</strong>.  
+          Já preparei um resumo claro e personalizado.  
+          Pode clicar abaixo para conferir! 💛
+
+        {% elif ultima_avaliacao.status_processamento_llm == 'FAILED' %}
+          Oi... sou a <strong>MarIA</strong>.  
+          Tive uma dificuldade ao gerar o resumo desta vez.  
+          Você pode tentar novamente daqui a pouco 😔
+        {% endif %}
+
+      </p>
+
+      <!-- Botão só aparece se COMPLETED -->
+      <div class="d-flex justify-content-center">
+        <button id="btn-comunicar"
+                class="btn btn-primary text-center px-4 py-2 fw-semibold"
+                style="border-radius: 30px; width: fit-content;
+                       {% if ultima_avaliacao.status_processamento_llm != 'COMPLETED' %}display:none;{% endif %}"
+                data-bs-toggle="modal"
+                data-bs-target="#modalResumoMaria"
+                data-gestante-id="{{ gestante.id }}">
+          Resumo dos fatores
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+
+<div class="chat-bubble-wrapper mt-3 mb-4 d-flex align-items-end justify-content-end">
+
+
+
+    <!-- Balão da MarIA -->
+    <div class="chat-bubble maria-bubble"
+         data-bs-toggle="modal"
+         data-bs-target="#chatMariaModal"
+         style="margin-right: 55px; margin-bottom: 8px; position: relative;">
+        <i class="bi bi-chat-dots-fill me-2"></i>
+        Se surgir alguma dúvida sobre a saúde da {{ gestante.nome }}, é só clicar aqui que eu te ajudo.
+    </div>
+
+    
+        <!-- Imagem da MarIA -->
+    <img src="{% static 'assets/imagens/maria.png' %}"
+         class="rounded-circle"
+         style="width:48px; height:48px; z-index:2;">
+
+</div>
+
+<div id="balao-mensagens" class="bg-white shadow-sm rounded-4 p-4 mb-4">
+  <div class="d-flex align-items-start">
+    <img src="{% static 'assets/imagens/maria.png' %}"
+         class="rounded-circle me-3"
+         style="width:48px; height:48px;">
+
+    <div class="flex-grow-1">
+
+      <p id="texto-balao" class="text-muted mb-2" style="font-size:0.95rem;">
+        <!-- Texto dinâmico será inserido aqui -->
+      </p>
+
+      <!-- BOTÃO AJUSTADO -->
+      <a id="btn-pilulas"
+         href="{% url 'pilulas' gestante.id %}" 
+         class="btn btn-primary text-center mt-3 px-4 py-2 fw-semibold"
+         style="display:none; border-radius: 30px; width: fit-content;">
+          Mensagens
+      </a>
+
+    </div>
+  </div>
+</div>
+
+
+
+        </div> {% endif %}
+
+      </div> 
+
+     
+
+
+    </div> </div>
+  
+  
+  </div> 
+
+
+  <!-- Modal do Chat -->
+<div class="modal fade" id="chatMariaModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-xl">
+    <div class="modal-content rounded-4 border-0 shadow-lg">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title fw-semibold">Conversa com a MarIA</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body pt-0">
+        <iframe 
+          id="chat-iframe"
+          src="{{CHAINLIT_URL}}/"
+          width="100%"
+          height="650"
+          style="border:none; border-radius: 12px;"
+        ></iframe>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL DA MARIA -->
+<div class="modal fade" id="modalResumoMaria" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="border-radius: 20px;">
+
+            <div class="modal-header border-0">
+                <h5 class="modal-title fw-semibold" style="color:#504F8C;">
+                    Resumo gerado pela MarIA
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+
+            <div class="modal-body">
+
+                <!-- BALÃO DE CONVERSA -->
+                <div class="bg-white shadow-sm rounded-4 p-4">
+                    <div class="d-flex align-items-start">
+                        
+                        <img src="{% static 'assets/imagens/maria.png' %}"
+                             class="rounded-circle me-3"
+                             style="width:48px; height:48px;">
+
+                        <div class="flex-grow-1">
+
+                            <!-- Onde o texto da MarIA será injetado -->
+                            <p id="conteudoResumoMaria"
+                              
+                               >
+                                Carregando resumo...
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    Fechar
+                </button>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+
+    <!-- Modal: Riscos Individuais -->
+<div class="modal fade" id="modalRiscosIndividuais" tabindex="-1" aria-labelledby="modalRiscosIndividuaisLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content" style="border-radius: 1rem;">
+
+      <div class="modal-header" style="background:#504F8C; color:white; border-radius: 1rem 1rem 0 0;">
+        <h5 class="modal-title" id="modalRiscosIndividuaisLabel">
+          Riscos Individuais para Doenças Crônicas
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+
+      <div class="modal-body">
+
+        {% if riscos.outros|length > 0 %}
+          <ul class="list-group">
+
+            {% for risco in riscos.outros %}
+              <li class="list-group-item d-flex flex-column gap-1">
+
+                <strong style="color:#504F8C;">{{ risco.nome }}</strong>
+
+                <div class="progress" style="height: 16px; border-radius: 8px; background-color: #8E94F2;">
+                  <div class="progress-bar"
+                       role="progressbar"
+                       style="width: {{ risco.valor }}%; background-color: #504F8C; font-size: 12px; font-weight:600;"
+                       aria-valuenow="{{ risco.valor }}"
+                       aria-valuemin="0"
+                       aria-valuemax="100">
+                    {{ risco.valor }}%
+                  </div>
+                </div>
+
+              </li>
+            {% endfor %}
+
+          </ul>
+
+        {% else %}
+          <p class="text-muted text-center">Nenhum risco individual disponível.</p>
+        {% endif %}
+
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+    
+    
+<script>
+
+  const textoBalao = document.getElementById("texto-balao");
+const gestanteId = "{{ gestante.id }}";
+const btnPilulas = document.getElementById("btn-pilulas");
+
+function atualizarBalao(status) {
+
+    // 🌟 STATUS → MENSAGENS PADRONIZADAS
+    if (status === "PENDING") {
+
+        textoBalao.innerHTML = `
+            <i class="fas fa-spinner fa-spin me-2"></i>
+            Oi! Eu sou a <strong>MarIA</strong> 💛  
+            Estou começando a preparar mensagens personalizadas para a 
+            <strong>{{ gestante.nome }}</strong>.  
+            Aguarde só um instantinho! 😊
+        `;
+
+        btnPilulas.style.display = "none";
+    }
+
+    else if (status === "PROCESSING") {
+
+        textoBalao.innerHTML = `
+            <i class="fas fa-spinner fa-spin me-2"></i>
+            Oi! Aqui é a <strong>MarIA</strong> 💛  
+            Estou finalizando as mensagens personalizadas para a 
+            <strong>{{ gestante.nome }}</strong>.  
+            Já estou terminando — é rapidinho! ⏳
+        `;
+
+        btnPilulas.style.display = "none";
+    }
+
+    else if (status === "FAILED") {
+
+        textoBalao.innerHTML = `
+            <i class="fas fa-exclamation-circle text-danger me-2"></i>
+            Oi… sou a <strong>MarIA</strong>.  
+            Tive uma dificuldade ao gerar as mensagens desta vez.  
+            Pode tentar novamente daqui a pouco? 😔
+        `;
+
+        btnPilulas.style.display = "none";
+    }
+
+    else if (status === "COMPLETED") {
+
+        textoBalao.innerHTML = `
+            Oi <strong>{{ request.user.profile.primeiro_nome }}</strong>!  
+            Preparei mensagens claras e personalizadas para você enviar para a 
+            <strong>{{ gestante.nome }}</strong>.  
+            Clique abaixo para ver 💛
+        `;
+
+        btnPilulas.style.display = "inline-flex";
+    }
+}
+
+// 🔄 FUNÇÃO DE CHECAGEM
+function checarStatusPillulas() {
+    fetch(`/avaliacao-status/${gestanteId}/?tipo=pilulas`)
+        .then(resp => resp.json())
+        .then(data => {
+            atualizarBalao(data.status);
+        })
+        .catch(err => console.error("Erro ao consultar status das pílulas", err));
+}
+
+
+// ⏳ Atualiza a cada 5s
+setInterval(checarStatusPillulas, 5000);
+
+// ▶️ Checa ao carregar a página
+checarStatusPillulas();
+
+
+const mensagemElem = document.getElementById("mensagem-maria");
+const botaoResumo = document.getElementById("btn-comunicar");
+
+
+function atualizarStatus() {
+    fetch(`/avaliacao-status/${gestanteId}/?tipo=sintese`)
+        .then(response => response.json())
+        .then(data => {
+            const status = data.status;
+
+            if (status === "PROCESSING" || status === "PENDING") {
+                mensagemElem.innerHTML = `
+                    Oi! Eu sou a <strong>MarIA</strong>.
+                    Ainda estou gerando um <strong>resumo explicativo</strong>.
+                    Só um instantinho! 😊
+                `;
+                if (botaoResumo) {
+                    botaoResumo.style.display = "none";
+                }
+            }
+
+            if (status === "COMPLETED") {
+                mensagemElem.innerHTML = `
+                    Oi! Eu sou a <strong>MarIA</strong>.
+                    Já preparei um resumo claro e personalizado.
+                    Pode clicar abaixo para conferir! 💛
+                `;
+                if (botaoResumo) {
+                    botaoResumo.style.display = "inline-block";
+                }
+
+                clearInterval(intervaloPolling);
+            }
+
+            if (status === "FAILED") {
+                mensagemElem.innerHTML = `
+                    Oi... sou a <strong>MarIA</strong>.
+                    Tive uma dificuldade ao gerar o resumo.
+                    Tente novamente mais tarde 😔
+                `;
+                if (botaoResumo) {
+                    botaoResumo.style.display = "none";
+                }
+
+                clearInterval(intervaloPolling);
+            }
+        })
+        .catch(err => console.error("Erro ao consultar status LLM:", err));
+}
+
+// Polling a cada 5s
+const intervaloPolling = setInterval(atualizarStatus, 5000);
+
+// Primeira chamada imediata
+atualizarStatus();
+
+const iframe = document.getElementById('chat-iframe');
+const chainlitURL = '{{ CHAINLIT_URL }}';
+const fatoresMsg = 'Fatores: {{ top_fatores|escapejs }}';
+const tokenMsg = 'Token: {{ token|escapejs }}';
+
+// Função que tenta enviar a mensagem várias vezes até dar certo
+function enviarMensagemParaIframe(tentativa = 1) {
+  if (!iframe || !iframe.contentWindow) {
+    console.warn(`⏳ Iframe ainda não pronto (tentativa ${tentativa})`);
+    if (tentativa < 10) setTimeout(() => enviarMensagemParaIframe(tentativa + 1), 500);
+    return;
+  }
+
+  console.log(`📨 Enviando mensagem à MarIA (tentativa ${tentativa})`);
+  
+  // 1️⃣ Primeiro envia o token
+  iframe.contentWindow.postMessage(tokenMsg, chainlitURL);
+
+  // 2️⃣ Depois envia os fatores
+  iframe.contentWindow.postMessage(fatoresMsg, chainlitURL);
+}
+
+// Quando o iframe carregar, inicia o processo de envio
+iframe.addEventListener('load', () => {
+  console.log("✅ Iframe da MarIA carregado!");
+  setTimeout(() => enviarMensagemParaIframe(), 600);
+});
+
+// Também tenta novamente toda vez que o modal é aberto
+document.getElementById('chatMariaModal').addEventListener('shown.bs.modal', () => {
+  console.log("💬 Modal do chat aberto — reenviando mensagem...");
+  enviarMensagemParaIframe();
+});
+
+// Recebe mensagens vindas da MarIA
+window.addEventListener('message', (event) => {
+  if (event.origin !== chainlitURL) return;
+  console.log("💬 Recebido da MarIA:", event.data);
+});
+
+document.addEventListener("DOMContentLoaded", function() {
+  
+
+    /* ==========================
+       1. Progress circles
+    =========================== */
+    const circles = document.querySelectorAll(".progress-circle");
+    circles.forEach(circle => {
+        const percent = parseFloat(circle.style.getPropertyValue("--percent"));
+        const deg = percent * 3.6;
+        circle.style.background = `conic-gradient(#93c5fd ${deg}deg, #e0f2fe ${deg}deg)`;
+    });
+
+    /* ==========================
+       2. Scroll ao abrir collapse
+    =========================== */
+    const outrosRiscos = document.getElementById("outrosRiscos");
+    if (outrosRiscos) {
+        outrosRiscos.addEventListener("shown.bs.collapse", function () {
+            outrosRiscos.scrollIntoView({
+                behavior: "smooth",
+                block: "start"
+            });
+        });
+    }
+
+    /* ==========================
+       3. Polling do status LLM
+    =========================== */
+   
+      const btnResumo = document.getElementById("btn-comunicar");
+
+      if (btnResumo) {
+          btnResumo.addEventListener("click", function () {
+
+              const gestanteId = this.dataset.gestanteId;
+              const url = `/gestantes/${gestanteId}/resumo/`;
+
+              document.getElementById("conteudoResumoMaria").innerHTML = "Carregando resumo...";
+
+              fetch(url)
+              .then(response => response.json())
+              .then(data => {
+                  document.getElementById("conteudoResumoMaria").innerHTML =
+                      data.sintese ? data.sintese : "<p>Nenhum resumo disponível.</p>";
+              })
+              .catch(() => {
+                  document.getElementById("conteudoResumoMaria").innerHTML =
+                      "<p class='text-danger'>Erro ao carregar resumo.</p>";
+              });
+          });
+      }
+
+});
+
+</script>
+
+
+<style>
+
+  /* Fonte padrão para celular */
+.texto-maria {
+    font-size: 1rem;
+    line-height: 1.45;
+}
+
+/* Ajuste para tablets (≥ 768px) */
+@media (min-width: 768px) {
+    .texto-maria {
+        font-size: 1.6rem;
+        line-height: 1.6;
+    }
+}
+
+/* Ajuste para telas grandes (≥ 992px) */
+@media (min-width: 992px) {
+    .texto-maria {
+        font-size: 1.7rem;
+        line-height: 1.65;
+    }
+}
+
+.loading-text {
+  display: inline-block;
+  font-weight: 500;
+  animation: pulse 1s infinite alternate, ellipsis steps(4, end) 1s infinite;
+  position: relative;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+.loading-text::after {
+  content: '...';
+  position: absolute;
+  right: -1em;
+  width: 1em;
+  text-align: left;
+  animation: ellipsis steps(4, end) 1s infinite;
+}
+
+@keyframes ellipsis {
+  0%, 20% { content: ''; }
+  40% { content: '.'; }
+  60% { content: '..'; }
+  80%, 100% { content: '...'; }
+}
+
+
+.chat-bubble {
+  background: linear-gradient(90deg, #8b5cf6, #a78bfa);
+  color: white;
+  padding: 10px 18px;
+  border-radius: 18px 18px 0 18px;
+  max-width: fit-content;
+  font-weight: 500;
+  font-size: 0.95rem;
+  box-shadow: 0 4px 10px rgba(139, 92, 246, 0.4);
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+
+.chat-bubble:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 14px rgba(139, 92, 246, 0.55);
+}
+
+.maria-bubble::after {
+  content: "";
+  position: absolute;
+  right: -10px;
+  bottom: 10px;
+  width: 0;
+  height: 0;
+  border-left: 12px solid #a78bfa;
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+  filter: drop-shadow(0 2px 2px rgba(139, 92, 246, 0.3));
+}
+
+</style>
+
+{% endblock %}

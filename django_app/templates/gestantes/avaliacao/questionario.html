@@ -1,0 +1,111 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load custom_filters %}
+
+{% block content %}
+<div class="container mt-4 px-3">
+
+    <!-- Card principal -->
+    <div class="card-modern p-4" style="background-color: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.1); border-radius: 12px;">
+        
+        <!-- Título moderno -->
+        <h4 class="evaluation-title text-center mb-4">
+            Avaliação Periódica 
+        </h4>
+        <p><b>Gestante:</b> {{ gestante.nome }}</p>
+
+        <!-- Formulário -->
+        <form method="post" id="evaluationForm">
+            {% csrf_token %}
+
+            {% for field in form.visible_fields %}
+            <div class="question-card">
+                <label for="{{ field.id_for_label }}" class="form-label" style="font-weight: 600; color: var(--secundaria);">
+                    <span class="question-number">{{ forloop.counter }}</span> {{ field.label }}
+                </label>
+
+                {% if field.field.widget.input_type == 'checkbox' %}
+                <div class="d-flex flex-wrap gap-2 mt-2">
+                    <label class="toggle-btn">
+                        <input type="radio" class="d-none" name="{{ field.html_name }}" value="True">
+                        Sim
+                    </label>
+                    <label class="toggle-btn">
+                        <input type="radio" class="d-none" name="{{ field.html_name }}" value="False">
+                        Não
+                    </label>
+                </div>
+                {% else %}
+                <div class="input-group mt-2">
+                    {{ field|add_class:"form-control input-mobile" }}
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+
+            <!-- Botão de envio -->
+            <div class="d-grid mt-4">
+                <button type="submit" class="btn-login" id="submitButton"> Calcular o risco </button>
+            </div>
+        </form>
+
+        <!-- Loading -->
+        <div id="loadingMessage" class="text-center mt-4" style="display: none;">
+            <p style="color: var(--secundaria);"><strong>Analisando suas respostas...</strong></p>
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Carregando...</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('evaluationForm').addEventListener('submit', function(event) {
+    event.preventDefault();
+
+    const form = event.target;
+    const camposIncompletos = [];
+
+    form.querySelectorAll('.question-card').forEach((card, index) => {
+        const radios = card.querySelectorAll('input[type="radio"]');
+        const outrosInputs = card.querySelectorAll('input:not([type="radio"]), select, textarea');
+        let respondido = false;
+
+        if (radios.length > 0) {
+            respondido = Array.from(radios).some(r => r.checked);
+        } else if (outrosInputs.length > 0) {
+            respondido = Array.from(outrosInputs).some(inp => inp.value.trim() !== '');
+        }
+
+        if (!respondido) {
+            camposIncompletos.push(index + 1);
+            card.style.border = '2px solid #dc3545';
+            card.style.borderRadius = '8px';
+        } else {
+            card.style.border = 'none';
+        }
+    });
+
+    if (camposIncompletos.length > 0) {
+        alert(`⚠️ Você precisa responder todas as perguntas antes de enviar.\n\nQuestões pendentes: ${camposIncompletos.join(', ')}`);
+        return;
+    }
+
+    const btn = document.getElementById('submitButton');
+    btn.disabled = true;
+    document.getElementById('loadingMessage').style.display = 'block';
+    setTimeout(() => form.submit(), 500);
+});
+
+// efeito visual “ativo” para botões Sim/Não
+document.querySelectorAll('.toggle-btn input').forEach(input => {
+    input.addEventListener('change', function() {
+        const group = input.closest('.d-flex');
+        group.querySelectorAll('.toggle-btn').forEach(lbl => lbl.classList.remove('active'));
+        input.parentElement.classList.add('active');
+    });
+});
+</script>
+
+
+{% endblock %}

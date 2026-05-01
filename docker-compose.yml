@@ -1,0 +1,232 @@
+services:
+  # ============================================================
+  # 🗄️ Serviço: Banco de Dados PostgreSQL
+  # ============================================================
+  db:
+    image: postgres:13
+    container_name: microservice_postgres_db
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - app-network
+    restart: unless-stopped  # Boa prática: reinicia caso o container pare
+
+ 
+  # ============================================================
+  # 🌐 Serviço: Django (Backend principal)
+  # ============================================================
+  django:
+    build: ./django_app
+    container_name: microservice_django_app
+    entrypoint: ["/app/entrypoint.sh"]
+    volumes:
+      - ./django_app:/app
+    ports:
+      - "8000:8001"
+    depends_on:
+      db:
+        condition: service_started
+      redis:
+        condition: service_started
+      users-service:
+        condition: service_healthy
+      gestantes-service:
+        condition: service_healthy
+    environment:
+      - REDIS_URL=${REDIS_URL}
+      - USERS_SERVICE_URL=http://users-service:8000
+      - GESTANTES_SERVICE_URL=http://gestantes-service:8001
+      - DJANGO_SUPERUSER_USERNAME=${DJANGO_SUPERUSER_USERNAME}
+      - DJANGO_SUPERUSER_EMAIL=${DJANGO_SUPERUSER_EMAIL}
+      - DJANGO_SUPERUSER_PASSWORD=${DJANGO_SUPERUSER_PASSWORD}
+      - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS}
+      - CHAINLIT_URL=${CHAINLIT_URL}
+      - DEBUG=${DEBUG}
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # ============================================================
+  # Servico: Banco isolado do Users Service
+  # ============================================================
+  users-db:
+    image: postgres:13
+    container_name: microservice_users_db
+    environment:
+      POSTGRES_DB: ${USERS_DB_NAME:-users_db}
+      POSTGRES_USER: ${USERS_DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${USERS_DB_PASSWORD:-postgres}
+    volumes:
+      - users_db_data:/var/lib/postgresql/data
+    ports:
+      - "5434:5432"
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================
+  # Servico: Users Service (FastAPI + JWT + FHIR R4)
+  # ============================================================
+  users-service:
+    build:
+      context: ./users-service
+      dockerfile: Dockerfile
+    container_name: microservice_users_service
+    volumes:
+      - ./users-service/app:/app/app
+      - ./users-service/tests:/app/tests
+    ports:
+      - "8003:8000"
+    depends_on:
+      users-db:
+        condition: service_healthy
+    environment:
+      - APP_NAME=Users Service
+      - APP_VERSION=1.0.0
+      - DEBUG=${USERS_DEBUG:-True}
+      - DB_HOST=users-db
+      - DB_PORT=5432
+      - DB_NAME=${USERS_DB_NAME:-users_db}
+      - DB_USER=${USERS_DB_USER:-postgres}
+      - DB_PASSWORD=${USERS_DB_PASSWORD:-postgres}
+      - SECRET_KEY=${USERS_SECRET_KEY:-dev-secret-key-change-in-production}
+      - GESTANTES_SERVICE_URL=http://gestantes-service:8001
+      - AVALIACOES_SERVICE_URL=http://avaliacoes-service:8002
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================
+  # Servico: Banco isolado do Gestantes Service
+  # ============================================================
+  gestantes-db:
+    image: postgres:13
+    container_name: microservice_gestantes_db
+    environment:
+      POSTGRES_DB: ${GESTANTES_DB_NAME:-gestantes_db}
+      POSTGRES_USER: ${GESTANTES_DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${GESTANTES_DB_PASSWORD:-postgres}
+    volumes:
+      - gestantes_db_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================
+  # Servico: Gestantes Service (FastAPI + FHIR R4)
+  # ============================================================
+  gestantes-service:
+    build:
+      context: ./gestantes-service
+      dockerfile: Dockerfile
+    container_name: microservice_gestantes_service
+    volumes:
+      - ./gestantes-service/app:/app/app
+    ports:
+      - "8001:8001"
+    depends_on:
+      gestantes-db:
+        condition: service_healthy
+    environment:
+      - APP_NAME=Gestantes Service
+      - APP_VERSION=1.0.0
+      - DEBUG=${GESTANTES_DEBUG:-True}
+      - DB_HOST=gestantes-db
+      - DB_PORT=5432
+      - DB_NAME=${GESTANTES_DB_NAME:-gestantes_db}
+      - DB_USER=${GESTANTES_DB_USER:-postgres}
+      - DB_PASSWORD=${GESTANTES_DB_PASSWORD:-postgres}
+      - USERS_SERVICE_URL=http://users-service:8000
+      - AVALIACOES_SERVICE_URL=http://avaliacoes-service:8002
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  
+    # 2. SERVIÇO REDIS (O BROKER)
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - app-network
+
+  worker:
+    build: ./django_app
+    container_name: microservice_django_worker
+    command: python manage.py rqworker default
+    depends_on:
+      - redis
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./django_app:/app  # <<< PRECISA TER ISSO!
+    working_dir: /app        # <<< define o diretório de trabalho
+    networks:
+      - app-network
+
+
+
+
+ # ============================================================
+  # 📊 Serviço: R API (Modelos Estatísticos via Plumber)
+  # ============================================================
+  predition_api:
+    build:
+      context: ./predition
+      dockerfile: Dockerfile
+    container_name: microservice_predition_api
+    ports:
+      - "8002:8000"
+    volumes:
+      - ./predition:/app
+    networks:
+      - app-network
+    restart: unless-stopped
+
+
+  
+
+# ============================================================
+# 🌐 Rede interna de comunicação entre serviços
+# ============================================================
+networks:
+  app-network:
+    driver: bridge  # Permite comunicação entre containers
+
+# ============================================================
+# 💾 Volumes persistentes
+# ============================================================
+volumes:
+  db_data:
+  users_db_data:
+  gestantes_db_data:

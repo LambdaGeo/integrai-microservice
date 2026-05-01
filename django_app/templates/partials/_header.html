@@ -1,0 +1,129 @@
+
+{% load static %}
+<nav class="navbar navbar-expand-lg navbar-dark fixed-top py-3 px-5">
+    <div class="d-flex align-items-center">
+        <button class="navbar-toggler order-0 me-2" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
+            aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+    
+        <a class="navbar-brand ms-2" href="{% url 'index' %}">
+
+            <img src="{% static '/assets/imagens/logo.png' %}" alt="IntegrAI Logo" class="navbar-logo">
+
+            
+        </a>
+    </div>
+    
+
+    <div class="collapse navbar-collapse" id="navbarNav">
+        <!-- Links alinhados à esquerda -->
+        <ul class="navbar-nav">
+            {% if user.is_authenticated %}
+
+            <li class="nav-item">
+                <a class="nav-link d-flex align-items-center"
+                href="{% url 'nova_gestante' %}"
+                title="Aqui você irá cadastrar uma nova gestante.">
+                    
+                    <span class="fas fa-user-plus me-1">Cadastrar</span> <small>gestante</small>
+                    
+
+                </a>
+            </li>
+
+            <li class="nav-item">
+                <a class="nav-link d-flex align-items-center"
+                href="{% url 'index' %}"
+                title="Aqui você irá ver todas as gestantes que está acompanhando.">
+                    <span class="fas fa-user-plus me-1">Listar</span> <small>gestantes</small>
+                </a>
+            </li>
+     
+        
+
+     
+
+
+
+            {% endif %}
+
+     
+            </li>
+        </ul>
+
+        <!-- Links alinhados à direita -->
+        <ul class="navbar-nav ms-auto">
+
+      
+            {% if user.is_authenticated %}
+
+                <!-- ======================================= -->
+                <!--           MENU MEU PERFIL               -->
+                <!-- ======================================= -->
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle d-flex align-items-center"
+                       href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+
+                        <i class="fas fa-user-circle me-1"></i>
+                        Perfil
+                    </a>
+
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm" style="border-radius: 10px;">
+                        <li>
+                            <a class="dropdown-item" href="{% url 'meu_perfil' %}">
+                                <i class="fas fa-id-card me-2"></i> Ver Meu Perfil
+                            </a>
+                        </li>
+
+                        <li>
+                            <a class="dropdown-item" href="{% url 'editar_perfil' %}">
+                                <i class="fas fa-user-edit me-2"></i> Editar Perfil
+                            </a>
+                        </li>
+
+                        <li>
+                            <a class="dropdown-item" href="{% url 'password_change' %}">
+                                <i class="fas fa-key me-2"></i> Alterar Senha
+                            </a>
+                        </li>
+
+                        <li><hr class="dropdown-divider"></li>
+
+                        <li>
+                            <a class="dropdown-item text-danger" href="{% url 'logout' %}">
+                                <i class="fas fa-sign-out-alt me-2"></i> Sair
+                            </a>
+                        </li>
+                    </ul>
+                </li>
+                <!-- FIM DO MENU MEU PERFIL -->
+
+                {% if user.is_staff %}
+                <li class="nav-item">
+                    <a class="nav-link d-flex align-items-center" href="/admin/">
+                        Administração
+                    </a>
+                </li>
+                {% endif %}
+
+            {% else %}
+
+                <li class="nav-item">
+                    <a class="nav-link d-flex align-items-center" href="{% url 'login' %}">
+                        <i class="fas fa-sign-in-alt me-2"></i> Entrar
+                    </a>
+                </li>
+
+                <li class="nav-item">
+                    <a class="nav-link d-flex align-items-center" href="{% url 'cadastro' %}">
+                        <i class="fas fa-user-shield me-2"></i> Novo Agente
+                    </a>
+                </li>
+
+            {% endif %}
+
+
+        </ul>
+    </div>
+</nav>

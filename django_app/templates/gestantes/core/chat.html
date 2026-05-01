@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% load custom_filters %}
+{% load static %}
+{% block content %}
+
+ <iframe src="http://127.0.0.1:8080/" id="the-frame" data-cy="the-frame"></iframe> 
+  
+
+
+  <script>
+
+
+  function postMessageToIframe() {
+    const iframe = document.getElementById('the-frame');
+    iframe.contentWindow.postMessage(
+      'Fatores: Consumo UltraProcessadooo, Saude Bucal',
+      'http://127.0.0.1:8080'
+    );
+  }
+
+  document.getElementById('the-frame').onload = () => {
+    console.log("Iframe carregado!");
+    setTimeout(() => {
+      console.log("Enviando mensagem automática...");
+      postMessageToIframe();
+    }, 400); // ajuste se precisar
+  };
+</script>
+
+{% endblock %}

@@ -1,0 +1,408 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block content %}
+
+{% if show_welcome %}
+<div class="modal fade" id="welcomeModal" tabindex="-1" aria-labelledby="welcomeModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-custom-welcome">
+        <div class="modal-content">
+            
+            <div class="modal-header border-0">
+                <h5 class="modal-title fw-bold" id="welcomeModalLabel">
+                    Bem-vindo(a) ao IntegrAI!
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+
+            <div class="modal-body">
+                <p>Olá, <strong>{{ request.user.profile.primeiro_nome }}</strong>!</p>
+                <p>Sua atuação como <strong>Agente Comunitário de Saúde (ACS)</strong> é essencial para o cuidado materno-infantil na Atenção Primária.</p>
+                <p>Este sistema apoia seu trabalho em quatro pilares:</p>
+                <p><strong>Acolher:</strong> coleta e registra dados clínicos e sociais com segurança durante as visitas domiciliares.</p>
+                <p><strong>Avaliar:</strong> seus registros alimentam modelos que preveem riscos gestacionais e infantis.</p>
+                <p><strong>Acompanhar:</strong> monitora a evolução da gestante e garante a continuidade do cuidado.</p>
+                <p><strong>Comunicar:</strong> utiliza as recomendações da assistente <strong>MarIA</strong> para orientar e fortalecer o vínculo com a gestante.</p>
+                <p>Com seu trabalho e esta plataforma, o pré-natal se torna mais seguro, preditivo e humanizado.</p>
+                <p><strong>Obrigado por sua dedicação!</strong></p>
+            </div>
+
+            <div class="modal-footer border-0">
+                <a href="{% url 'index' %}" class="btn-login">Fechar</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    window.onload = function() {
+        var myModal = new bootstrap.Modal(document.getElementById('welcomeModal'));
+        myModal.show();
+    };
+</script>
+{% endif %}
+
+ 
+
+<div class="d-flex align-items-center p-3 bg-light rounded shadow mb-4">
+    <div class="me-3">
+        {% if profile.foto %}
+            <img src="{{ profile.foto.url }}" alt="Foto do Agente" class="rounded-circle profile-pic-sm">
+        {% else %}
+            <img src="{% static 'assets/imagens/usuarios/silhueta.png' %}" alt="Foto do Agente" class="rounded-circle profile-pic-sm">
+        {% endif %}
+    </div>
+    <div>
+        <h5 class="mb-1">{{ profile.nome }}</h5>
+        <small class="text-muted">Agente Comunitário | Área {{ profile.area }}</small>
+    </div>
+</div>
+
+{% if cards %}
+<div class="row mb-4">
+    <div class="col-12">
+        <form action="{% url 'buscar' %}" method="GET" >
+            <input type="text" 
+                   name="buscar" 
+                   placeholder="🔍 Buscar gestante..." 
+                   class="form-control rounded-pill shadow-sm px-4" 
+                   required>
+        </form>
+    </div>
+</div>
+{%endif%}
+
+                <div class="modal fade" id="modalConfirmacaoConsentimento" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content rounded-3 shadow">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Revogar Consentimento</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p>Tem certeza que deseja revogar o consentimento desta gestante?</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="button" class="btn btn-danger" id="confirmarRevogacaoBtn">Revogar</button>
+                    </div>
+                    </div>
+                </div>
+                </div>
+
+<script>
+let formTemp = null;
+let toggleTemp = null;
+let estadoAnterior = null;
+
+function abrirModalConfirmacao(gestanteId, checkbox) {
+    formTemp = document.getElementById(`form-consentimento-${gestanteId}`);
+    toggleTemp = checkbox;
+
+    // guarda o estado ANTERIOR (antes da mudança)
+    estadoAnterior = !checkbox.checked;
+
+    const modal = new bootstrap.Modal(document.getElementById('modalConfirmacaoConsentimento'));
+    modal.show();
+}
+
+// Confirmar → envia o form
+document.getElementById('confirmarRevogacaoBtn').addEventListener('click', function() {
+    if (formTemp) {
+        formTemp.submit();
+    }
+});
+
+// Cancelar → volta o toggle pro estado anterior
+document.getElementById('modalConfirmacaoConsentimento').addEventListener('hidden.bs.modal', function (event) {
+    // Só volta se o form não foi enviado (ou seja, se não clicou em confirmar)
+    if (toggleTemp && !formTemp.submitted) {
+        toggleTemp.checked = estadoAnterior;
+    }
+});
+</script>
+
+{% if cards %}
+<div class="cards-container d-flex flex-wrap justify-content-center gap-4 mt-3">
+    {% for gestante in cards %}
+        <div class="card-wrapper" style="min-height: 200px;">
+            <div class="card-modern card-clicavel h-100 shadow-sm" style="max-width: 500px;">
+                <a href="{% url 'gestante' gestante.id %}" class="card-link">
+                <div class="card-modern-content">
+                    <div class="card-modern-left">
+                        {% if gestante.foto %}
+                            <img src="{{ gestante.foto.url }}" alt="Foto de {{ gestante.nome }}">
+                        {% else %}
+                            <img src="{% static 'assets/imagens/gestante/silhueta.png' %}" alt="Foto de {{ gestante.nome }}">
+                        {% endif %}
+
+          
+                        
+                        <div class="card-ellipse"></div>
+                        <div class="card-ellipse-bg"></div>
+
+                        <div class="mb-4 ms-3 d-flex align-items-center justify-content-start gap-2">
+                            <form id="form-consentimento-{{ gestante.id }}" method="POST" action="{% url 'revogar_consentimento' gestante.id %}">
+                                {% csrf_token %}
+                                <label class="switch">
+                                    <input type="checkbox" 
+                                           name="revogar" 
+                                           {% if gestante.consentimento_ativo %}checked{% endif %} 
+                                           onchange="abrirModalConfirmacao({{ gestante.id }}, this)">
+                                    <span class="slider round"></span>
+                                </label>
+                            </form>
+                            <span class="consent-text">
+                                {% if gestante.consentimento_ativo %}
+                                    Ativo
+                                {% else %}
+                                    Revogado
+                                {% endif %}
+                            </span>
+                        </div>
+                        
+                    </div>
+
+                    <div class="card-modern-right">
+                        
+                            <h5 class="card-title">
+                                {{ gestante.primeiro_nome }} {{ gestante.ultimo_nome }}
+                                <i class="fa-solid fa-chevron-right ms-1 d-md-none" style="font-size: .9em;"></i>
+                            </h5>
+                            <span> <strong>Idade:</strong> {{ gestante.idade }} </span>
+
+                            
+                            {% if gestante.imc %}
+                                <strong>| IMC:</strong>
+                                <span class="{{ gestante.imc_cor }}">
+                                     {{ gestante.imc }}
+                                </span>
+                            {% else %}
+                                <span class="text-muted">IMC indisponível</span>
+                            {% endif %}
+                            
+                            </p>
+                            {% if gestante.questionarios.last %}
+                                <p class="text-muted"><small>Última avaliação: {{ gestante.questionarios.last.data_aplicacao|date:"d/m/Y" }}</small></p>
+                            {% else %}
+                                <p class="text-muted"><small>Sem avaliações registradas</small></p>
+                            {% endif %}
+                      
+
+                        <div class="mt-3 d-flex flex-column align-items-center gap-2">
+                            <div class="d-flex justify-content-center gap-3">
+                                <a href="#" 
+                                    class="btn-login"
+                                    onclick="verificarPredicaoAntesDeAvaliar({{ gestante.id }}); return false;">
+                                    Avaliar
+                                    </a>
+
+                                {% if gestante.questionarios.last %}
+                                    {% with ultima_avaliacao=gestante.questionarios.last %}
+                                        {% if ultima_avaliacao.status_processamento_pills == 'COMPLETED' %}
+                                            <a href="{% url 'pilulas' gestante.id %}" 
+                                            id="btn-comunicar-{{ gestante.id }}"
+                                            class="btn-secondary">
+                                               Mensagens
+                                            </a>
+                                        {% elif ultima_avaliacao.status_processamento_pills == 'FAILED' %}
+                                            <a href="#"
+                                            id="btn-comunicar-{{ gestante.id }}"
+                                            class="btn-secondary disabled"
+                                            tabindex="-1"
+                                            aria-disabled="true"
+                                            data-bs-toggle="tooltip"
+                                            data-bs-placement="top"
+                                            title="A MarIA teve um erro ao processar essa avaliação. Tente gerar uma nova avaliação para reprocessar.">
+                                               Mensagens
+                                            </a>
+                                        {% else %}
+                                            {# PENDING ou PROCESSING #}
+                                            <a href="#"
+                                            id="btn-comunicar-{{ gestante.id }}"
+                                            class="btn-secondary disabled"
+                                            tabindex="-1"
+                                            aria-disabled="true"
+                                            data-bs-toggle="tooltip"
+                                            data-bs-placement="top"
+                                            title="A MarIA ainda está processando as informações. Aguarde mais um pouco.">
+                                               Mensagens
+                                            </a>
+                                        {% endif %}
+                                    {% endwith %}
+                                {% else %}
+                                    <a href="#"
+                                    class="btn-secondary disabled"
+                                    tabindex="-1"
+                                    aria-disabled="true"
+                                    data-bs-toggle="tooltip"
+                                    data-bs-placement="top"
+                                    title="Você precisa registrar ao menos uma avaliação antes de pedir orientações.">
+                                       Mensagens
+                                    </a>
+                                {% endif %}
+                            </div>
+
+       
+                        </div>
+                    </div>
+                </div>
+            </a>
+            </div>
+        </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="d-flex justify-content-center my-5">
+    <div class="text-center" style="max-width: 420px;">
+
+        <img src="{% static 'assets/imagens/maria.png' %}"
+             alt="MarIA"
+             class="rounded-circle mb-3"
+             style="width:70px; height:70px; object-fit:cover;">
+
+        <p class="text-muted mb-3" style="font-size:1.1rem; line-height:1.45;">
+            Olá! Eu sou a <strong>MarIA</strong> 😊  
+            <br>
+            Que tal começarmos o acompanhamento?  
+            Cadastre a primeira gestante para que eu possa ajudar você
+            a cuidar dela e garantir a saúde dela e do futuro bebê, com orientações
+            e resumos personalizados.
+        </p>
+
+        <a href="{% url 'nova_gestante' %}" class="btn btn-primary px-4 py-2" style="border-radius: 30px;">
+            <i class="fas fa-user-plus me-2"></i>
+            Cadastrar gestante
+        </a>
+    </div>
+</div>
+
+{% endif %}
+
+
+<style>
+/* Animação de feedback "Aguardando a Maria" */
+.loading-text {
+  display: inline-block;
+  font-weight: 500;
+  animation: pulse 1s infinite alternate, ellipsis steps(4, end) 1s infinite;
+  position: relative;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+.loading-text::after {
+  content: '...';
+  position: absolute;
+  right: -1em;
+  width: 1em;
+  text-align: left;
+  animation: ellipsis steps(4, end) 1s infinite;
+}
+
+@keyframes ellipsis {
+  0%, 20% { content: ''; }
+  40% { content: '.'; }
+  60% { content: '..'; }
+  80%, 100% { content: '...'; }
+}
+
+
+
+</style>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    const cards = document.querySelectorAll(".card-modern");
+
+    cards.forEach(card => {
+        const btnComunicar = card.querySelector("[id^='btn-comunicar-']");
+        if (!btnComunicar) return;
+
+        const gestanteId = btnComunicar.id.split("-").pop();
+        const statusLLM = document.getElementById(`status-llm-${gestanteId}`);
+        if (!statusLLM) return;
+
+        async function verificarStatus() {
+            try {
+                const response = await fetch(`/avaliacao-status/${gestanteId}/?tipo=pilulas`);
+                if (!response.ok) return;
+
+                const data = await response.json();
+
+                if (data.status === "PENDING" || data.status === "PROCESSING") {
+                    statusLLM.innerHTML = `<span class="loading-text">A MarIA está processando as informações da gestante.</span>`;
+                    btnComunicar.classList.add("disabled");
+                } else if (data.status === "COMPLETED") {
+                    statusLLM.textContent = "";
+                    btnComunicar.classList.remove("disabled");
+                } else if (data.status === "FAILED") {
+                    statusLLM.textContent = "A MarIA teve uma dificuldade ao processar a avaliação. Tente novamente daqui a pouco.";
+                    btnComunicar.classList.add("disabled");
+                }
+            } catch (error) {
+                console.error("Erro ao verificar status:", error);
+            }
+        }
+
+        verificarStatus();
+        setInterval(verificarStatus, 5000);
+
+
+
+
+        // Tooltips Bootstrap
+        const tooltipTriggerList = [].slice.call(
+            document.querySelectorAll('[data-bs-toggle="tooltip"]')
+        );
+        tooltipTriggerList.forEach(function (tooltipTriggerEl) {
+            new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+    });
+});
+
+
+
+async function verificarPredicaoAntesDeAvaliar(gestanteId) {
+    try {
+        // Chama o endpoint Django que testa a API de predição
+        const response = await fetch("/api-predicao-status/");
+        const data = await response.json();
+
+        if (data.online) {
+            // OK → redireciona
+            window.location.href = `/gestante/${gestanteId}/cadastrar_questionario/`;
+        } else {
+            // API OFF → mostra alerta
+            mostrarAlerta("O serviço de predição está indisponível no momento. Tente novamente mais tarde.");
+        }
+
+    } catch (e) {
+        console.error("Erro ao verificar API:", e);
+        mostrarAlerta("Não foi possível verificar o serviço de predição.");
+    }
+}
+
+function mostrarAlerta(mensagem) {
+    const container = document.createElement("div");
+    container.innerHTML = `
+        <div class="alert alert-danger alert-dismissible fade show position-fixed"
+             style="top: 20px; right: 20px; z-index: 2000;">
+            ${mensagem}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    `;
+    document.body.appendChild(container);
+
+    // Remove após 5s
+    setTimeout(() => container.remove(), 5000);
+}
+
+</script>
+
+
+{% endblock %}
+

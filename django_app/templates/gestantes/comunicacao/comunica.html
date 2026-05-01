@@ -1,0 +1,196 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load custom_filters %}
+
+{% block content %}
+<div class="container py-4">
+
+  <!-- Box principal -->
+  <div class="form-login form-container"
+       style="display:block; background-color:#f3e8ff; box-shadow:0 4px 12px rgba(0,0,0,0.1); border-radius:12px; padding:2rem; max-width:700px; margin:auto;">
+
+
+<div class="d-flex align-items-center gap-3 mb-4 flex-wrap text-center text-md-start">
+     <img src="{% static 'assets/imagens/maria.png' %}"
+         class="rounded-circle me-3"
+         style="width:48px; height:48px;">
+
+  <div>
+ 
+       <h4 class="mb-0">Eu sou MarIA, ACS virtual.</h4>
+  </div>
+</div>
+   
+
+<!-- SÍNTESE DA MARIA -->
+<div class="bg-white shadow-sm rounded-4 p-4 mb-4">
+  <div class="d-flex align-items-start">
+    <img src="{% static 'assets/imagens/maria.png' %}"
+         class="rounded-circle me-3"
+         style="width:48px; height:48px;">
+
+    <div class="flex-grow-1">
+     
+      <p class="text-muted mb-0" style="font-size:0.95rem;">
+        {{ sintese|default:"Oi, preparei um resumo atualizado para te ajudar no acompanhamento desta semana." }}
+      </p>
+    </div>
+  </div>
+ 
+</div>
+
+
+
+
+
+
+
+
+
+    </div>
+</div>
+
+
+
+
+
+<style>
+.btn-gradient-maria {
+  background: linear-gradient(90deg, #8b5cf6, #a78bfa);
+  color: #fff;
+  border: none;
+  border-radius: 50px;
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.btn-gradient-maria:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 18px rgba(139, 92, 246, 0.6);
+  color: #fff;
+}
+.modal-content {
+  background-color: #fafafa;
+}
+
+
+.chat-bubble-container {
+  cursor: pointer;
+}
+
+.chat-bubble {
+  background: linear-gradient(90deg, #8b5cf6, #a78bfa);
+  color: white;
+  padding: 10px 18px;
+  border-radius: 18px 18px 0 18px;
+  max-width: fit-content;
+  font-weight: 500;
+  font-size: 0.95rem;
+  box-shadow: 0 4px 10px rgba(139, 92, 246, 0.4);
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+
+.chat-bubble:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 14px rgba(139, 92, 246, 0.55);
+}
+
+.msg-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 1rem;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.06);
+  cursor: pointer;
+  transition: transform .1s ease;
+}
+.msg-card:hover {
+  transform: scale(1.02);
+}
+
+.maria-bubble::after {
+  content: "";
+  position: absolute;
+  right: -10px;          /* distância entre balão e imagem */
+  bottom: 10px;          /* altura onde o bico aponta */
+  width: 0;
+  height: 0;
+  border-left: 12px solid #a78bfa;  /* cor do bico (gradiente mais claro) */
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+  filter: drop-shadow(0 2px 2px rgba(139, 92, 246, 0.3));
+}
+
+
+
+.btn-whatsapp {
+  background-color: #25D366; /* verde WhatsApp */
+  color: #fff !important;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 50px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 4px 12px rgba(37, 211, 102, 0.4);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  text-decoration: none;
+}
+
+.btn-whatsapp:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 18px rgba(37, 211, 102, 0.55);
+  color: #fff !important;
+}
+
+.chat-bubble-maria {
+  background: #fff;
+  border-radius: 18px;
+  padding: 1rem 1.2rem;
+  border-left: 6px solid #a78bfa;
+}
+
+.form-container {
+  background: #f5eaff !important;
+  border-radius: 22px !important;
+}
+
+.bg-white {
+  border-radius: 18px !important;
+}
+
+
+.pilula-card {
+  border-radius: 16px;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+
+.pilula-disponivel {
+  background: linear-gradient(90deg, #8b5cf6, #a78bfa);
+  color: white !important;
+}
+
+.pilula-indisponivel {
+    background-color: #f1f1f1 !important;  /* cinza claro */
+    color: #858585 !important;             /* texto apagado */
+    border: 1px solid #d0d0d0 !important;  /* borda fraca */
+    filter: grayscale(40%);                /* deixa apagado */
+   /* pointer-events: none;                   impede clique */
+    opacity: 0.7;                          /* efeito "inativo" */
+
+}
+
+
+
+
+</style>
+
+<script>
+
+
+
+
+</script>
+
+
+
+{% endblock %}

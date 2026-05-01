@@ -1,0 +1,20 @@
+{% extends "admin/base.html" %}
+{% load static %}
+
+{% block title %}Administração IntegrAI{% endblock %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <!-- CSS customizado -->
+  <link rel="stylesheet" href="{% static '/styles/admin.css' %}">
+{% endblock %}
+
+{% block branding %}
+  <h1 id="site-name">
+    <a href="{% url 'admin:index' %}" style="text-decoration:none; color:white;">
+      🌸 IntegrAI Admin
+    </a>
+  </h1>
+{% endblock %}
+
+{% block nav-global %}{% endblock %}

@@ -1,0 +1,108 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block content %}
+
+<div class="basic-container mt-4 mb-4">
+
+    <div class="form-login form-container"
+        style="box-shadow: 0 4px 12px rgba(0,0,0,0.1); border-radius: 12px; padding: 2rem;">
+
+        <h3 class="text-center mb-4">Editar Perfil</h3>
+
+        <p><strong>CPF:</strong> {{ user.username }}</p>
+
+        <!-- Mensagens do Django -->
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert 
+                    {% if message.tags %}alert-{{ message.tags }}{% endif %}"
+                    style="padding:0.75rem 1rem; border-radius:8px; margin-bottom:1rem;
+                        {% if message.tags == 'success' %}background-color:#D4EDDA; color:#155724;
+                        {% elif message.tags == 'error' %}background-color:#F8D7DA; color:#721C24;{% endif %}">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+
+        <form action="{% url 'editar_perfil' %}" method="POST" enctype="multipart/form-data">
+            {% csrf_token %}
+
+            <div class="row" style="background-color: white;">
+                <!-- ----- CAMPOS DO USER ----- -->
+                {% for field in form_user.visible_fields %}
+                    <div class="col-12 mb-3">
+                        <label class="form-label">{{ field.label }}</label>
+                        {{ field }}
+                        {% if field.errors %}
+                            <div class="alert alert-danger mt-2">
+                                <ul>
+                                    {% for error in field.errors %}
+                                        <li>{{ error }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+
+                <!-- ----- CAMPOS DO PROFILE ----- -->
+                {% for field in form_profile.visible_fields %}
+                    <div class="col-12 mb-3">
+                        <label class="form-label">{{ field.label }}</label>
+
+                        {% if field.name == "foto" %}
+                            <input type="file" name="{{ field.name }}" accept="image/*"
+                                   class="form-control" id="id_foto">
+                            
+                            <!-- Preview da foto atual -->
+                            {% if form_profile.instance.foto %}
+                                <img src="{{ form_profile.instance.foto.url }}" 
+                                     id="previewFoto"
+                                     style="max-width:100%; margin-top:1em; border-radius:8px;">
+                            {% else %}
+                                <img id="previewFoto" style="display:none; max-width:100%; margin-top:1em; border-radius:8px;">
+                            {% endif %}
+                        {% else %}
+                            {{ field }}
+                        {% endif %}
+
+                        {% if field.errors %}
+                            <div class="alert alert-danger mt-2">
+                                <ul>
+                                    {% for error in field.errors %}
+                                        <li>{{ error }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            </div>
+
+            <button type="submit" class="btn-primary btn-login mt-3">Salvar Alterações</button>
+        </form>
+    </div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const inputFoto = document.querySelector("#id_foto");
+    const preview = document.querySelector("#previewFoto");
+
+    if (!inputFoto) return;
+
+    inputFoto.addEventListener("change", function (e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function (evt) {
+            preview.src = evt.target.result;
+            preview.style.display = "block";
+        }
+        reader.readAsDataURL(file);
+    });
+});
+</script>
+
+{% endblock %}

@@ -1,0 +1,424 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load custom_filters %}
+
+{% block content %}
+<div class="container py-4">
+
+  <!-- Box principal -->
+  <div class="form-login form-container"
+       style="display:block; background-color:#f3e8ff; box-shadow:0 4px 12px rgba(0,0,0,0.1); border-radius:12px; padding:2rem; max-width:700px; margin:auto;">
+
+
+<div class="d-flex align-items-center gap-3 mb-4 flex-wrap text-center text-md-start">
+     <img src="{% static 'assets/imagens/maria.png' %}"
+         class="rounded-circle me-3"
+         style="width:48px; height:48px;">
+
+  <div>
+ 
+       <p>Escolha a mensagem de acordo com a semana na qual você está.</p>
+  </div>
+
+
+</div>
+   
+
+
+
+
+
+
+
+
+
+
+<div id="mensagem-pilulas"></div>
+
+{% for pilula in pilulas %}
+<div class="mb-3">
+
+<div class="pilula-card bg-white shadow-sm rounded-4 p-3 d-flex align-items-center
+            {% if pilula.status == 'pendente' and pilula.disponivel %}
+                 pilula-disponivel
+            {% else %}
+                 pilula-indisponivel
+            {% endif %}"
+     data-id="{{ pilula.id }}"
+     data-disponivel="{{ pilula.disponivel|yesno:'true,false' }}">
+
+    <div class="d-flex align-items-center flex-grow-1"
+         {% if pilula.status == 'pendente' and pilula.disponivel %}
+             data-bs-toggle="modal" data-bs-target="#pilulaModal{{ pilula.id }}"
+         {% endif %}
+         style="cursor:pointer;">
+
+        <div class="flex-grow-1 me-3">
+            <strong class="{% if pilula.status == 'pendente' and pilula.disponivel %}text-white{% else %}text-dark{% endif %}">
+                {{ pilula.semana_ord }} semana
+            </strong>
+            <div class="{% if pilula.status == 'pendente' and pilula.disponivel %}text-white{% else %}text-muted{% endif %}" style="font-size:0.85rem;">
+                {{ pilula.data_range }}
+            </div>
+        </div>
+
+        <i class="bi bi-whatsapp" style="font-size:1.4rem; color:#25D366;"></i>
+    </div>
+
+
+    <form method="POST"
+          action="{% url 'atualizar_status_pilula' pilula.id %}"
+          class="ms-3 ps-3 d-flex align-items-center border-start">
+        {% csrf_token %}
+           <span class="me-2">Já enviou?</span>
+        <label class="switch">
+          <input type="checkbox"
+                 name="enviada"
+                 {% if pilula.status == 'enviada' %}checked{% endif %}
+                 {% if not pilula.disponivel %}disabled{% endif %}
+                 onchange="atualizarStatusPilula(this)">
+          <span class="slider round"></span>
+        </label>
+    </form>
+    
+</div>
+
+</div>
+{% endfor %}
+
+
+
+      <a href="{% url 'gestante' gestante.id %}"
+   class="btn btn-outline-primary mb-3 d-inline-flex align-items-center gap-2"
+   style="border-radius: 30px;">
+
+    <i class="bi bi-arrow-left-circle"></i>
+    Voltar para a gestante
+</a>
+
+
+
+
+    </div>
+
+
+</div>
+
+
+<!-- Modais das pílulas (sempre renderizados) -->
+{% for pilula in pilulas %}
+<div class="modal fade" id="pilulaModal{{ pilula.id }}" tabindex="-1"
+     aria-labelledby="pilulaModalLabel{{ pilula.id }}" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"
+       style="max-width:500px; width:90%;">
+    <div class="modal-content border-0 rounded-4 shadow">
+
+      <div class="modal-header border-0">
+        <button type="button" class="btn-close" data-bs-dismiss="modal"
+                aria-label="Fechar"></button>
+      </div>
+
+      <div class="modal-body bg-light pt-0 pb-4 px-3 px-sm-4">
+
+        <div class="d-flex align-items-start flex-wrap text-center text-sm-start">
+
+          <div class="me-sm-3 mb-3 mb-sm-0 mx-auto mx-sm-0">
+            <img src="{% static 'assets/imagens/maria.png' %}" alt="Maria"
+                 class="rounded-circle border"
+                 style="width:70px; height:70px; object-fit:cover;">
+          </div>
+
+          <div class="flex-grow-1 w-100">
+            <div class="card border-0 shadow-sm rounded-4 mx-auto"
+                 style="background-color:white;">
+              <div class="card-body">
+
+                <h5 class="fw-bold mb-2">{{ pilula.titulo }}</h5>
+                <p class="mb-2">{{ pilula.conteudo }}</p>
+
+                <div class="text-center mt-4">
+                  
+                  {% if gestante.telefone_whatsapp %}
+                    <a href="https://wa.me/{{ gestante.telefone_whatsapp }}?text={{ 'MarIA — Dicas do Agente: ' }}{{ pilula.conteudo|urlencode }}"
+                       target="_blank"
+                       class="btn-whatsapp">
+                      <i class="bi bi-whatsapp me-2"></i>
+                      Enviar para {{ gestante.nome }}
+                    </a>
+                  {% else %}
+                    <a href="https://api.whatsapp.com/send?text={{ 'MarIA — Dicas do Agente: ' }}{{ pilula.conteudo|urlencode }}"
+                       target="_blank"
+                       class="btn-whatsapp">
+                      <i class="bi bi-whatsapp me-2"></i>
+                      Enviar pelo WhatsApp
+                    </a>
+                  {% endif %}
+
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+</div>
+{% endfor %}
+
+
+
+<!-- Modal do Chat -->
+<div class="modal fade" id="chatMariaModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-xl">
+    <div class="modal-content rounded-4 border-0 shadow-lg">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title fw-semibold">Conversa com a MarIA</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body pt-0">
+        <iframe 
+          id="chat-iframe"
+          src="{{CHAINLIT_URL}}/"
+          width="100%"
+          height="650"
+          style="border:none; border-radius: 12px;"
+        ></iframe>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+.btn-gradient-maria {
+  background: linear-gradient(90deg, #8b5cf6, #a78bfa);
+  color: #fff;
+  border: none;
+  border-radius: 50px;
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.btn-gradient-maria:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 18px rgba(139, 92, 246, 0.6);
+  color: #fff;
+}
+.modal-content {
+  background-color: #fafafa;
+}
+
+
+.chat-bubble-container {
+  cursor: pointer;
+}
+
+.chat-bubble {
+  background: linear-gradient(90deg, #8b5cf6, #a78bfa);
+  color: white;
+  padding: 10px 18px;
+  border-radius: 18px 18px 0 18px;
+  max-width: fit-content;
+  font-weight: 500;
+  font-size: 0.95rem;
+  box-shadow: 0 4px 10px rgba(139, 92, 246, 0.4);
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+
+.chat-bubble:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 14px rgba(139, 92, 246, 0.55);
+}
+
+.msg-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 1rem;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.06);
+  cursor: pointer;
+  transition: transform .1s ease;
+}
+.msg-card:hover {
+  transform: scale(1.02);
+}
+
+.maria-bubble::after {
+  content: "";
+  position: absolute;
+  right: -10px;          /* distância entre balão e imagem */
+  bottom: 10px;          /* altura onde o bico aponta */
+  width: 0;
+  height: 0;
+  border-left: 12px solid #a78bfa;  /* cor do bico (gradiente mais claro) */
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+  filter: drop-shadow(0 2px 2px rgba(139, 92, 246, 0.3));
+}
+
+
+
+.btn-whatsapp {
+  background-color: #25D366; /* verde WhatsApp */
+  color: #fff !important;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 50px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 4px 12px rgba(37, 211, 102, 0.4);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  text-decoration: none;
+}
+
+.btn-whatsapp:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 18px rgba(37, 211, 102, 0.55);
+  color: #fff !important;
+}
+
+.chat-bubble-maria {
+  background: #fff;
+  border-radius: 18px;
+  padding: 1rem 1.2rem;
+  border-left: 6px solid #a78bfa;
+}
+
+.form-container {
+  background: #f5eaff !important;
+  border-radius: 22px !important;
+}
+
+.bg-white {
+  border-radius: 18px !important;
+}
+
+
+.pilula-card {
+  border-radius: 16px;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+
+.pilula-disponivel {
+  background: linear-gradient(90deg, #8b5cf6, #a78bfa);
+  color: white !important;
+}
+
+.pilula-indisponivel {
+    background-color: #f1f1f1 !important;  /* cinza claro */
+    color: #858585 !important;             /* texto apagado */
+    border: 1px solid #d0d0d0 !important;  /* borda fraca */
+    filter: grayscale(40%);                /* deixa apagado */
+   /* pointer-events: none;                   impede clique */
+    opacity: 0.7;                          /* efeito "inativo" */
+
+}
+
+
+
+
+</style>
+
+<script>
+
+    document.addEventListener('DOMContentLoaded', function() {
+    // 1. Seleciona todos os formulários que contêm o toggle
+    const toggleForms = document.querySelectorAll('.pilula-card form');
+
+    toggleForms.forEach(form => {
+        // 2. Adiciona um ouvinte de evento de clique em cada formulário
+        form.addEventListener('click', function(event) {
+            // 3. Impede a propagação do evento de clique imediatamente
+            event.stopPropagation();
+            
+            // Opcional: Impedir qualquer ação padrão (como submeter o form se fosse um botão)
+            // event.preventDefault(); 
+        });
+    });
+});
+
+
+const iframe = document.getElementById('chat-iframe');
+const chainlitURL = '{{ CHAINLIT_URL }}';
+const fatoresMsg = 'Fatores: {{ top_fatores|escapejs }}';
+
+// Função que tenta enviar a mensagem várias vezes até dar certo
+function enviarMensagemParaIframe(tentativa = 1) {
+  if (!iframe || !iframe.contentWindow) {
+    console.warn(`⏳ Iframe ainda não pronto (tentativa ${tentativa})`);
+    if (tentativa < 10) setTimeout(() => enviarMensagemParaIframe(tentativa + 1), 500);
+    return;
+  }
+
+  console.log(`📨 Enviando mensagem à MarIA (tentativa ${tentativa})`);
+  iframe.contentWindow.postMessage(fatoresMsg, chainlitURL);
+}
+
+// Quando o iframe carregar, inicia o processo de envio
+iframe.addEventListener('load', () => {
+  console.log("✅ Iframe da MarIA carregado!");
+  setTimeout(() => enviarMensagemParaIframe(), 600);
+});
+
+// Também tenta novamente toda vez que o modal é aberto
+document.getElementById('chatMariaModal').addEventListener('shown.bs.modal', () => {
+  console.log("💬 Modal do chat aberto — reenviando mensagem...");
+  enviarMensagemParaIframe();
+});
+
+// Recebe mensagens vindas da MarIA
+window.addEventListener('message', (event) => {
+  if (event.origin !== chainlitURL) return;
+  console.log("💬 Recebido da MarIA:", event.data);
+});
+
+function atualizarStatusPilula(checkbox) {
+    const form = checkbox.closest("form");
+    const url = form.action;
+    const formData = new FormData(form);
+
+    const card = checkbox.closest(".pilula-card");
+    const pilulaId = card.getAttribute("data-id");
+
+    // === MUDANÇA CRUCIAL: Localizar o elemento correto para o modal ===
+    // O modal é acionado pelo primeiro DIV filho do card, que contém a classe flex-grow-1
+    const modalTrigger = card.querySelector('div.d-flex.align-items-center.flex-grow-1');
+    // ===================================================================
+
+    fetch(url, {
+        method: "POST",
+        body: formData,
+        headers: { "X-Requested-With": "XMLHttpRequest" }
+    })
+    .then(response => response.json())
+    .then(data => {
+        const enviada = checkbox.checked;
+
+        if (enviada) {
+            // marcada como enviada → desativa clique do modal (no elemento 'modalTrigger')
+            modalTrigger.removeAttribute("data-bs-toggle");
+            modalTrigger.removeAttribute("data-bs-target");
+            card.classList.remove("pilula-disponivel");
+            card.classList.add("pilula-indisponivel");
+
+        } else {
+            // desmarcada → reativa clique do modal (no elemento 'modalTrigger')
+            modalTrigger.setAttribute("data-bs-toggle", "modal");
+            modalTrigger.setAttribute("data-bs-target", `#pilulaModal${pilulaId}`);
+            card.classList.remove("pilula-indisponivel");
+            card.classList.add("pilula-disponivel");
+        }
+    })
+    .catch(err => console.error(err));
+}
+
+
+
+</script>
+
+
+
+{% endblock %}

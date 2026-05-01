@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<div class="login-container">
+
+    <div class="form-login form-container"
+         style="box-shadow: 0 4px 12px rgba(0,0,0,0.1); border-radius: 12px; padding: 2rem; text-align:center;">
+
+        <h3 class="mb-3" style="color:#155724;">Senha Alterada com Sucesso</h3>
+
+        <p style="font-size:1.1rem; color:#155724; background:#D4EDDA; padding:0.8rem 1rem; border-radius:8px;">
+            Sua senha foi atualizada com sucesso!
+        </p>
+
+        <a href="{% url 'meu_perfil' %}" class="btn-primary btn-login mt-3">
+            Voltar ao Meu Perfil
+        </a>
+
+    </div>
+
+</div>
+
+{% endblock %}

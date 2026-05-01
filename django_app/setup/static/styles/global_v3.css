@@ -1,0 +1,1311 @@
+/* =========================
+   Fontes
+   ========================= */
+@font-face {
+    font-family: 'Chillax';
+    src: url('/static/fonts/Chillax-Regular.woff2') format('woff2'),
+         url('/static/fonts/Chillax-Regular.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: 'Chillax';
+    src: url('/static/fonts/Chillax-Bold.woff2') format('woff2'),
+         url('/static/fonts/Chillax-Bold.ttf') format('truetype');
+    font-weight: bold;
+    font-style: normal;
+}
+
+
+/* =========================
+   Variáveis (paleta)
+   ========================= */
+:root {
+    --primaria: #5A55A0;        /* roxo forte */
+    --primaria-clara: #8E94F2;  /* roxo mais claro */
+    --secundaria: #504F8C;      /* roxo escuro */
+    --destaque: #F5EFFF;        /* lilás/acento  #DAB6FC*/
+}
+
+
+/* =========================
+   Layout global
+   ========================= */
+
+
+.text-primary  {
+    color: var(--primaria) !important;
+}
+
+/* Garante que html e body usem 100% da altura e remove overflow indesejado */
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    
+}
+
+
+body {
+    padding-top: 90px; /* ajusta de acordo com a altura da navbar */
+    background-color: var(--destaque);
+    font-family: 'Chillax', sans-serif;
+
+    /* Adicionado para "Sticky Footer" */
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+nav {
+    background-color: var(--primaria);
+}
+
+#the-frame {
+    width: 100%;
+    /* REMOVE flex-grow: 1; */ 
+    
+    /* ADICIONA uma altura máxima (ex: 85% da altura da janela) */
+    max-height: 85vh; 
+    
+    /* ADICIONA height: 100% para tentar preencher o espaço até o max-height */
+    /* Ou use uma altura fixa grande se preferir: height: 2000px; */
+    height: 100%; /* Pode precisar ajustar ou remover dependendo do comportamento */
+
+    border: none;
+    display: block; 
+    margin: 0;
+    padding: 0;
+    /* O scroll interno do iframe deve funcionar automaticamente */
+}
+
+
+/* =========================
+   Pre-Footer
+   ========================= */
+
+
+
+.pre-footer {
+    background-color: var(--primaria); /* Roxo forte (fundo) */
+    color: #ffffff;                    /* Texto branco */
+    font-family: 'Chillax', sans-serif;
+}
+
+.pre-footer .row {
+    background-color: var(--primaria); /* mantém consistência */
+}
+
+/* Título customizado */
+.pre-footer-heading {
+    font-family: 'Chillax', sans-serif;
+    font-size: 1rem; 
+    font-weight: 600; 
+    color: #ffffff;                     /* Título branco */
+    margin-bottom: 1.25rem;
+}
+
+.pre-footer p {
+    color: var(--destaque); /* Lilás claro (para parágrafos) */
+    line-height: 1.6;
+}
+
+/* Estilo para as listas de links e contato */
+.pre-footer-list li {
+    color: var(--destaque); /* Lilás claro (para texto) */
+}
+
+.pre-footer-list a {
+    color: var(--destaque); /* Lilás claro (para links) */
+    text-decoration: none;
+    transition: color 0.3s ease;
+}
+
+.pre-footer-list a:hover {
+    color: #ffffff; /* Branco puro no hover */
+    text-decoration: underline;
+}
+
+/* Ícone de contato */
+.pre-footer .list-unstyled i {
+    width: 20px; 
+    text-align: center;
+    color: #ffffff; /* Ícone branco */
+}
+
+footer {
+    background-color: var(--primaria);
+    color: #ffffff;
+    padding: 12px;
+    text-align: center;
+    border-top: 1px solid #ffffff; /* <-- ADICIONE ESTA LINHA */
+}
+
+.container-fluid {
+    background-color: var(--destaque); /* aplica fundo lilás suave */
+    /* min-height: 100vh;  <-- REMOVIDO */
+    padding-top: 20px;
+    padding-bottom: 20px;
+
+    /* Adicionado para "Sticky Footer" */
+    flex-grow: 1;
+
+    /* Adicionado para conter o main corretamente */
+    display: flex;
+    flex-direction: column; /* Garante que o main possa crescer verticalmente */
+    padding-left: 0 !important; /* Remove padding lateral se quiser que main use todo espaço da coluna */
+    padding-right: 0 !important; /* Remove padding lateral */
+}
+.row {
+    background-color: var(--destaque); /* mantém consistência */
+    display: flex;
+    flex-wrap: wrap; /* garante quebra automática */
+}
+
+/* Garante que o container <main> ainda possa crescer */
+main[role="main"] {
+    /* ... seus estilos existentes ... */
+    padding: 10 !important; 
+    margin: 10 !important; 
+    width: 100%; 
+    flex-grow: 1; /* Mantém a capacidade de crescer */
+    display: flex; /* Mantém */
+    flex-direction: column; /* Mantém */
+    min-height: 0; /* Mantém */
+    /* IMPORTANTE: Garante que o main tenha scroll se o iframe (com max-height) for maior que ele */
+    /* overflow: auto; */
+}
+
+.navbar {
+    border: none;        /* remove bordas */
+    box-shadow: none;    /* remove sombra padrão do fixed-top */
+}
+
+
+/* =========================
+   Tabelas
+   ========================= */
+table.table-bordered {
+    border-color: var(--primaria) !important;
+}
+
+table.table-bordered th,
+table.table-bordered td {
+    border-color: var(--primaria) !important;
+}
+
+table.table-bordered thead th {
+    background-color: var(--primaria);
+    color: white;
+}
+
+
+/* =========================
+   Tipografia e títulos
+   ========================= */
+label {
+    font-weight: bold;
+    margin-bottom: 4px;
+    color: var(--secundaria);
+    font-family: 'Chillax', sans-serif;
+}
+
+label.form-label {
+    color: #424245;
+    font-family: 'Work Sans', sans-serif;
+    font-size: 16px;        /* tamanho mais adequado para web */
+    font-style: normal;
+    font-weight: 600;
+    line-height: 1.2;       /* melhor leitura */
+    letter-spacing: -0.5px; /* espaçamento menor */
+}
+
+.login-slogan {
+    color: #504F8C;              /* roxo escuro da paleta */
+    font-family: 'Chillax', sans-serif;
+    font-size: 40px;             /* tamanho grande */
+    font-style: normal;
+    font-weight: 600;            /* semi-bold */
+    line-height: normal;
+    letter-spacing: -2px;        /* ajuste fino entre letras */
+    text-align: center;          /* centraliza a frase */
+    margin-bottom: 0.5rem;       /* espaçamento abaixo da frase */
+}
+
+.evaluation-title {
+    position: relative;
+    display: inline-block;
+    padding-bottom: 10px;
+    color: var(--secundaria);
+    font-family: 'Chillax', sans-serif;
+    font-size: 28px;
+    font-weight: 700;
+}
+
+.evaluation-title span {
+    color: var(--primaria);
+}
+
+.evaluation-title::after {
+    content: "";
+    display: block;
+    width: 60%;
+    height: 3px;
+    margin: 8px auto 0;
+    background: linear-gradient(90deg, var(--primaria), var(--primaria-clara));
+    border-radius: 2px;
+}
+
+
+/* =========================
+   Formulários e login
+   ========================= */
+.form-container {
+    padding: 2rem;
+    background-color: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    font-family: 'Chillax', sans-serif;
+}
+
+/* Tela de login */
+.login-container {
+    position: relative; /* necessário para posicionar a elipse */
+    display: flex;
+    min-height: 100vh;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden; /* esconde excesso da elipse */
+        background: linear-gradient(
+        to bottom, 
+        #DAB6FC 1.31%, 
+        #8E94F2 50.38%, 
+        #6F72BF 86.3%, 
+        #504F8C 102.48%
+    );
+}
+
+
+.basic-container {
+    position: relative; /* necessário para posicionar a elipse */
+    display: flex;
+    min-height: 100vh;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden; /* esconde excesso da elipse */
+
+}
+
+/* Formulário de login */
+.form-login {
+    position: relative;
+    z-index: 1; /* acima da elipse */
+    max-width: 400px;
+    width: 100%;
+    padding: 2rem;
+    background-color: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    font-family: 'Chillax', sans-serif;
+}
+
+.form-login h3 {
+    color: #504F8C;                /* mesma cor do slogan */
+    font-family: 'Chillax', sans-serif; 
+    font-size: 32px;               /* proporcional ao layout do formulário */
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: -2px;
+    text-align: center;
+    margin-bottom: 1.5rem;
+}
+
+select {
+    width: 100%;
+    padding: 8px;
+    font-size: 16px;
+    border-radius: 6px;
+    border: 1px solid var(--primaria);
+    background-color: var(--destaque);
+    font-family: 'Chillax', sans-serif;
+}
+
+/* Ellipse decorativa */
+.ellipse-bg {
+    position: absolute;
+    width: 392.85px;
+    height: 250.76px;
+
+
+
+    border: 8px solid var(--primaria-clara); /* #8E94F2 */
+    border-radius: 50%;
+    transform: rotate(-137.82deg);
+
+    /* deixa atrás de tudo */
+    z-index: 0;
+}
+
+
+
+
+/* Elipse 1 */
+.ellipse-1 {
+    width: 380px;
+    height: 240px;
+    top: -40px;
+    right: 100px;
+    transform: rotate(-140deg);
+}
+
+/* Elipse 2 */
+.ellipse-2 {
+    width: 380px;
+    height: 240px;
+    top: 200px;
+    right: 120px;
+    transform: rotate(-240deg);
+    opacity: 0.35;
+    border: 8px solid #6F72BF; /* #8E94F2 */
+}
+
+/* Elipse 3 */
+.ellipse-3 {
+    width: 450px;
+    height: 300px;
+    top: 50%;
+    left: -180px;
+    transform: rotate(110deg);
+    opacity: 0.35;
+}
+
+.ellipse-custom {
+    position: absolute;
+
+    width: 276.66px;
+    height: 208.76px;
+
+    top: 355.23px;
+    right: -95px;
+
+    
+    background: #E7B6FF;   /* preenchida */
+    border-radius: 50%;    /* transforma em elipse */
+
+    transform: rotate(-227.63deg);
+
+    opacity: 1;
+    z-index: 0;
+}
+
+.ellipse-tech {
+    position: absolute;
+
+    width: 514.74px;
+    height: 319.76px;
+
+    top: 228.54px;
+    right: 80.76px;
+
+    background: #6F72BF; /* cor solicitada */
+    border-radius: 50%;
+
+    transform: rotate(15.96deg);
+
+    opacity: 1;
+    z-index: 0;
+
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+}
+
+/* Estilo do texto dentro da elipse */
+.ellipse-text {
+    position: relative;
+    z-index: 2;
+
+    font-size: 24px;
+    font-weight: bold;
+    line-height: 1.2;
+    color: white;
+
+    transform: rotate(-15.96deg); 
+    /* rotaciona o texto para "desfazer" a rotação da elipse */
+}
+
+
+
+/* Imagem hero à direita, atrás do conteúdo */
+.login-hero {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 400px;   /* ajuste conforme necessário */
+    height: auto;
+    object-fit: cover;
+    z-index: 0;
+}
+
+/* Conteúdo fica acima */
+
+
+
+
+/* Modal de Boas-Vindas */
+.modal-custom-welcome .modal-content {
+    border-radius: 16px;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+    border: none;
+}
+
+.modal-custom-welcome .modal-title {
+    color: var(--secundaria);
+    font-family: 'Chillax', sans-serif;
+}
+
+.modal-custom-welcome .modal-body {
+    color: #333;
+    font-family: 'Chillax', sans-serif;
+    line-height: 1.6;
+    font-size: 1rem;
+}
+
+/* Header do Agente */
+.profile-pic-sm {
+    width: 60px;
+    height: 60px;
+    object-fit: cover;
+}
+
+
+/* =========================
+   Botões
+   ========================= */
+.card-buttons,
+.tags__lista {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 16px;
+    width: 100%;
+    padding: 10px;
+}
+
+.card-buttons .btn,
+.tags__lista .btn {
+    flex: 1;
+    min-width: 140px;
+    max-width: 200px;
+    padding: 12px 18px;
+    font-size: 16px;
+    font-weight: bold;
+    border: none;
+    border-radius: 8px;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+    font-family: 'Chillax', sans-serif;
+}
+
+/* Botão primário */
+.btn-primary {
+    background-color: var(--primaria); /* roxo forte */
+    color: #ffffff;
+    border: none;
+    border-radius: 12px;
+    padding: 10px 16px;
+    font-weight: bold;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+    font-family: 'Chillax', sans-serif;
+    display: block;
+    width: 100%;
+    text-align: center;
+}
+
+.btn-primary:hover {
+    background-color: var(--secundaria);
+    transform: scale(1.05);
+}
+
+/* Botão secundário */
+.btn-secondary {
+    background: linear-gradient(90deg, #8E94F2, #DAB6FC);
+    font-family: 'Chillax', sans-serif;
+    color: #ffffff; /* texto branco */
+    border-radius: 12px;
+    padding: 10px 16px;
+    font-weight: bold;
+    transition: background 0.3s ease, transform 0.2s ease;
+    border: none;
+    display: block;
+    width: 100%;
+    text-align: center;
+    text-decoration: none;
+}
+
+.btn-secondary:hover {
+    background: linear-gradient(90deg, #7C82E8, #C99FF8);
+    color: #ffffff; /* mantém texto branco */
+    transform: scale(1.03);
+    text-decoration: none;
+}
+
+/* * Sobrescreve o .btn-secondary.disabled padrão (que só fica opaco)
+ * para um estilo cinza, mais explícito, como solicitado.
+*/
+.btn-secondary.disabled,
+.btn-secondary:disabled {
+    background: #e9ecef;            /* Remove o gradiente e aplica um fundo cinza */
+    background-image: none;         /* Garante a remoção do gradiente */
+    color: #adb5bd;                 /* Cor do texto cinza (apagada) */
+    opacity: 1;                     /* Remove a opacidade padrão do Bootstrap */
+    cursor: not-allowed;            /* Mostra o cursor de "não permitido" */
+    box-shadow: none;               /* Remove qualquer sombra */
+}
+
+
+/* * Garante que o hover não tenha NENHUM efeito 
+ * visual (sem mudança de cor, sem 'scale')
+*/
+.btn-secondary.disabled:hover,
+.btn-secondary:disabled:hover {
+    background: #e9ecef;
+    color: #adb5bd;
+    transform: none;                /* Remove o efeito de 'scale' do hover */
+}
+
+
+.btn-primary.disabled,
+.btn-primary:disabled {
+    background: #e9ecef;            /* Remove o gradiente e aplica um fundo cinza */
+    background-image: none;         /* Garante a remoção do gradiente */
+    color: #adb5bd;                 /* Cor do texto cinza (apagada) */
+    opacity: 1;                     /* Remove a opacidade padrão do Bootstrap */
+    cursor: not-allowed;            /* Mostra o cursor de "não permitido" */
+    box-shadow: none;               /* Remove qualquer sombra */
+    pointer-events: none;
+}
+
+
+/* * Garante que o hover não tenha NENHUM efeito 
+ * visual (sem mudança de cor, sem 'scale')
+*/
+.btn-primary.disabled:hover,
+.btn-primary:disabled:hover {
+    background: #e9ecef;
+    color: #adb5bd;
+    transform: none;                /* Remove o efeito de 'scale' do hover */
+}
+
+/* Botão terciário */
+.btn-tertiary {
+    background-color: var(--primaria-clara);
+    color: #ffffff;
+    border: none;
+}
+
+.btn-tertiary:hover {
+    background-color: var(--primaria);
+    transform: scale(1.05);
+}
+
+/* Botão login */
+.btn-login {
+    background-color: var(--primaria); /* roxo forte */
+    color: #ffffff;
+    border-radius: 12px;
+    padding: 10px 16px;
+    font-weight: bold;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+    font-family: 'Chillax', sans-serif;
+    border: none;
+    display: block;
+    width: 100%;
+    text-align: center;
+    text-decoration: none; /* remove o sublinhado */
+}
+
+.btn-login:hover {
+    background-color: var(--secundaria); /* roxo escuro */
+    transform: scale(1.02);
+    text-decoration: none;
+}
+
+
+/* =========================
+   Navegação
+   ========================= */
+
+/* Regra geral para nav-links (ex: tabs na página, se houver) */
+.nav-link {
+    color: var(--primaria);
+    font-weight: bold;
+    padding: 10px;
+    border-radius: 6px;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+    font-family: 'Chillax', sans-serif;
+}
+
+.nav-link:hover {
+    color: var(--primaria);
+    background-color: var(--destaque);
+    transform: scale(1.05);
+}
+
+.navbar-logo {
+  height: 50px; /* Ajuste esta altura conforme o seu logo */
+  width: auto;  /* Mantém a proporção */
+}
+
+
+.navbar .nav-link {
+    color: #ffffff; /* <-- Define a cor do texto para branco */
+}
+
+
+.navbar .nav-link:hover {
+    
+    background-color: var(--primaria-clara);
+    transform: scale(1.05);
+}
+
+/* =========================
+   Sidebar
+   ========================= */
+/* Sidebar mantendo logo */
+.sidebar {
+    position: relative;
+    height: 100vh;
+    width: 240px;
+    padding-top: 20px; /* espaço para o logo */
+    color: #333;
+    font-family: 'Chillax', sans-serif; /* fonte melhorada */
+    border-radius: 12px;
+    background-color: #FFFDF6;
+    background-image: url('/static/assets/imagens/logo.png');
+    background-repeat: no-repeat;
+    background-position: center 60%; /* topo para logo */
+    background-size: 80% auto;
+    box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+}
+
+/* Overlay leve, opcional */
+.sidebar::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: rgba(255,255,255,0.0); /* transparente, pode ajustar se quiser escurecer */
+    z-index: 0;
+}
+
+/* Conteúdo acima do overlay */
+.sidebar > .sidebar-sticky {
+    position: relative;
+    z-index: 1;
+}
+
+/* Espaçamento entre itens */
+.sidebar .nav.flex-column {
+    gap: 8px;
+    margin-top: 20px;
+}
+
+/* Links da sidebar */
+.sidebar .nav-link {
+    color: #5A55A0; /* roxo forte da paleta */
+    font-weight: 500;
+    font-size: 1rem;
+    padding: 12px 15px;
+    border-radius: 6px;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+    display: block;
+    text-decoration: none;
+}
+
+/* Hover nos links */
+.sidebar .nav-link:hover {
+    color: #FFF;
+    background-color: #8E94F2; /* roxo claro */
+    transform: scale(1.02);
+}
+
+/* Item ativo */
+.sidebar .nav-link.active {
+    color: #FFF;
+    background-color: #504F8C; /* roxo escuro */
+}
+
+
+/* =========================
+   Cards
+   ========================= */
+.card-img-top {
+    height: 150px;
+    object-fit: contain;
+    border-radius: 8px;
+}
+
+.card {
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    border-radius: 10px;
+    background-color: var(--primaria-clara);
+    border: none;
+    padding: 20px;
+    text-align: center;
+    font-family: 'Chillax', sans-serif;
+}
+
+.card-hover:hover {
+    transform: scale(1.5);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+}
+
+.card-modern {
+    width: 100%; /* impede largura fixa que causa sobreposição */
+    position: relative;
+    overflow: hidden;
+    border-radius: 16px;
+    background-color: white;
+    font-family: 'Chillax', sans-serif;
+    transition: transform .15s ease, box-shadow .15s ease;
+    cursor: pointer;
+    transform-origin: top;
+    display: flex;
+    flex-direction: column;
+    
+}
+
+.card-modern:hover {
+    transform: none; /* remove o aumento */
+    box-shadow: 0 8px 20px rgba(0,0,0,0.2); /* mantém sombra */
+}
+
+.card-modern-content {
+    position: relative;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+.card-modern-left {
+    position: relative;
+    flex: 0 0 120px; /* largura da foto */
+    height: 120px;
+    margin-right: 16px;
+}
+
+
+
+.card-modern-left img {
+        position: absolute;
+    left: 16px;
+    top: -10px;
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;        /* deixa a imagem redonda */
+    object-fit: cover;         /* mantém proporção e corta excesso */
+    object-position: top;      /* foca na parte superior (rosto) */
+    position: relative;
+    z-index: 2;
+}
+
+.card-ellipse {
+    content: '';
+    position: absolute;
+    top: -220px;           /* ajusta vertical */
+    left: -200px;       /* centraliza atrás da imagem */
+    z-index: 1;
+    width: 350px;       /* maior que a largura do card */
+    height: 300px;      /* proporção elíptica */
+    background-color: #7A7DD1;  /* cor fixa */
+    border-radius: 50% / 50%;
+    transform: rotate(-137.82deg);
+
+    z-index: 0;
+}
+
+.card-ellipse-2 {
+    content: '';
+    position: absolute;
+    top: -80px;           /* ajusta vertical */
+    left: -10px;       /* centraliza atrás da imagem */
+    z-index: 1;
+    width: 180px;       /* maior que a largura do card */
+    height: 150px;      /* proporção elíptica */
+    background-color: #5F60A5;  /* cor fixa */
+    border-radius: 50% / 50%;
+    transform: rotate(-137.82deg);
+}
+
+/* Ellipse decorativa */
+.card-ellipse-bg {
+    position: absolute;
+    width: 200px;
+    height: 300px;
+    top: -220px;           /* ajusta vertical */
+    left: -100px;       /* centraliza atrás da imagem */
+
+
+    border: 8px solid #D6B4FC; /* #8E94F2 */
+    border-radius: 50%;
+    transform: rotate(-137.82deg);
+
+
+}
+
+.card-ellipse,
+.card-ellipse-bg {
+    pointer-events: none !important;
+    z-index: 0 !important;
+}
+
+.card-modern-right {
+    flex: 1;
+    padding: 12px 16px;
+}
+
+.card-modern-right .card-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--secundaria);
+}
+
+.card-modern-right p {
+    margin: 4px 0;
+    color: #333;
+}
+
+.card-buttons {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.card-link {
+    text-decoration: none;
+    color: inherit;
+    display: block;
+}
+
+.card-link:hover {
+    color: inherit;
+}
+
+/* Apenas o card da gestante */
+.card-clicavel:hover {
+    transform: translateY(-15px); /* sobe levemente */
+    box-shadow: 0 8px 20px rgba(0,0,0,0.15); /* sombra mais destacada */
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    cursor: pointer; /* indica clique */
+}
+
+.card-modern .btn-login {
+    text-decoration: none !important;
+}
+
+.card-clicavel {
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+
+
+.card-clicavel:active {
+    transform: scale(0.97); /* efeito de clique */
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    opacity: 0.9; /* leve escurecida */
+}
+
+
+/* =========================
+   Progressos e switches
+   ========================= */
+.progress-link:hover .progress-bar {
+    background-color: var(--primaria-clara);
+}
+
+/* Toggle switch estilizado com cores da paleta */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 50px;
+  height: 26px;
+}
+
+.switch input { 
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: var(--secundaria); /* inativo */
+  transition: .4s;
+  border-radius: 26px;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 20px; width: 20px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: .4s;
+  border-radius: 50%;
+}
+
+input:checked + .slider {
+  background-color: var(--primaria); /* ativo */
+}
+
+input:checked + .slider:before {
+  transform: translateX(24px);
+}
+
+/* Texto ao lado do toggle */
+.consent-text {
+    font-family: 'Chillax', sans-serif;
+    font-weight: 600;
+    color: var(--secundaria);
+    font-size: 0.95rem;
+}
+
+
+/* =========================
+   Consentimento
+   ========================= */
+.consent-box {
+    background-color: #ffffff;
+    color: #333333;
+    padding: 30px;             /* aumenta o padding interno */
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    font-family: 'Chillax', sans-serif;
+    line-height: 1.6;
+    font-size: 1rem;
+    /* As regras de altura foram removidas 
+       para que a caixa se ajuste ao conteúdo. */
+}
+
+
+/* =========================
+   Questionário
+   ========================= */
+.question-card {
+    background: #f9f9f9;
+    border-radius: 10px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+    border: 1px solid #eee;
+    transition: background 0.2s;
+}
+
+.question-card:hover {
+    background: #f1f7ff;
+}
+
+/* Número da questão */
+.question-number {
+    display: inline-block;
+    background: var(--primaria);
+    color: #fff;
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+    text-align: center;
+    line-height: 28px;
+    margin-right: 8px;
+    font-size: 0.9rem;
+    font-weight: bold;
+}
+
+/* Botões toggle (Sim/Não) */
+.toggle-btn {
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    cursor: pointer;
+    transition: all 0.2s;
+    user-select: none;
+}
+
+.toggle-btn.active,
+.toggle-btn:hover {
+    background: var(--primaria);
+    color: #fff;
+    border-color: var(--primaria);
+}
+
+
+/* Ajustes mobile-friendly */
+@media (max-width: 768px) {
+    .toggle-btn {
+        flex: 1 1 45%;
+        text-align: center;
+    }
+    .question-card {
+        padding: 0.75rem 1rem;
+    }
+
+    .pre-footer {
+        display: none !important;
+    }
+
+    .card-modern:active {
+        transform: scale(0.97);
+        box-shadow: 0 0 0 4px rgba(0,0,0,0.08) inset;
+    }
+
+    .card-title i {
+        font-size: 1.3em !important;
+        opacity: 0.7;
+    }
+
+
+}
+
+
+@media (max-width: 1000px) {
+
+
+    .ellipse-text {
+        display: none;
+    }
+
+}
+
+
+
+
+
+/* =========================
+   Pílulas
+   ========================= */
+.pilula-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem;
+    margin-bottom: 0.5rem;
+    border-radius: 1rem;
+    position: relative;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+/* Pílulas disponíveis e pendentes */
+.pilula-disponivel {
+    background-color: #6f42c1;
+    color: white;
+    cursor: pointer;
+}
+
+.pilula-disponivel:hover {
+    transform: scale(1.02);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* Pílulas indisponíveis ou já enviadas */
+.pilula-indisponivel {
+    background-color: #e0d4f7;
+    color: #999;
+    cursor: default;
+}
+
+/* Ícone da pílula */
+.pill-icon {
+    width: 40px;
+    height: 40px;
+}
+
+
+
+/* =========================
+   Página Específica: Detalhe Gestante
+   ========================= */
+
+/* 1. Estilo do Card Principal */
+.card-gestante {
+  background-color: var(--destaque) !important; /* Força o fundo lilás */
+  border-radius: 20px;
+  /* Padding ajustado para a foto: top, horizontal, bottom */
+  padding: 80px 20px 20px; /* espaço maior p/ foto flutuar */
+  position: relative;
+  box-shadow: none !important;
+  transition: none; /* Remove transição do .card global */
+}
+
+
+
+/* Garante que não haja efeitos de hover do .card global */
+.card-gestante:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.gestante-foto {
+  width: 120px;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 50%;
+  border: 4px solid #fff;
+  position: absolute;
+  top: -40px; 
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #fff;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+}
+
+.card-evolucao {
+    background-color: #fff;
+}
+
+/* 2. Card Interno de Risco */
+.card-risco {
+  background-color: #fff;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08); 
+
+}
+
+.progress-circle {
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  /* Cor base (será sobrescrita por JS) */
+  background: conic-gradient(#e0f2fe 0deg, #e0f2fe 0deg); 
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  margin: 20px auto;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+  transition: background 1s ease-out;
+}
+
+.progress-circle::before {
+  content: '';
+  position: absolute;
+  width: 95px;
+  height: 95px;
+  border-radius: 50%;
+  background-color: #fff;
+}
+
+.percent-text {
+  position: absolute;
+  font-weight: 700;
+  font-size: 1.8rem;
+  color: #1e40af; /* Mantido, pois não está na paleta */
+}
+
+.card-outros-riscos {
+  background-color: #fff;
+  border-radius: 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  padding: 20px;
+  margin-top: 10px;
+}
+
+/* 3. Botões Específicos (Corrigidos) */
+
+/* Este botão não deve ser afetado pelo .btn-login global */
+.btn-detalhar {
+  background-color: var(--primaria);
+  color: #fff;
+  border: none;
+  padding: 0.6rem 1.2rem;
+  border-radius: 10px;
+  font-weight: 600; /* Absorvido do .btn-login local */
+  transition: all 0.2s ease-in-out;
+  width: auto; /* Garante que não pegue width: 100% */
+}
+
+.btn-detalhar:hover {
+  background-color: var(--secundaria); /* Usando sua variável */
+}
+
+/* Este é um modificador para o .btn-primary */
+.btn-avaliar {
+  max-width: 300px;
+  text-align: center;
+  font-weight: 600;
+  border-radius: 10px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  transition: transform 0.15s ease;
+}
+
+.btn-avaliar:hover {
+  transform: translateY(-2px);
+}
+
+/* 4. Outros */
+.fatores-badges span {
+  font-size: 0.95rem;
+  padding: 6px 12px;
+  border-radius: 12px;
+}
+
+.collapse:not(.show) {
+  transition: height 0.4s ease;
+}
+
+/* Botão de editar gestante */
+
+.edit-btn {
+    border-radius: 25px; /* formato mais moderno */
+    padding: 6px 12px;
+    font-weight: 500;
+    transition: 0.2s ease-in-out;
+}
+
+.edit-btn i {
+    font-size: 0.85rem;
+}
+
+.edit-btn:hover {
+    background-color: #0d6efd;
+    color: white;
+    border-color: #0d6efd;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.15);
+}
+
+.name-edit-group {
+    margin-top: 25px; /* respiro entre foto e nome */
+}
+
+.btn-gradient-maria {
+  background: linear-gradient(90deg, #8b5cf6, #a78bfa);
+  color: #fff;
+  border: none;
+  border-radius: 50px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 3px 8px rgba(139, 92, 246, 0.4);
+}
+.btn-gradient-maria:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.6);
+  color: #fff;
+}
+
+
+/* * CORREÇÃO: Reseta a largura dos botões dentro do card.
+ * As classes .btn-login e .btn-secondary têm 'width: 100%',
+ * o que quebra o layout 'd-flex' no HTML.
+*/
+
+.card-modern-right {
+      min-width: 200px;   /* Garante um tamanho mínimo legível */
+}
+
+.card-modern-right .d-flex .btn-login,
+.card-modern-right .d-flex .btn-secondary {
+    width: auto;        /* Remove o 'width: 100%' conflituoso */
+    flex: 1 1 auto;   /* Faz os botões dividirem o espaço */
+    min-width: 100px;   /* Garante um tamanho mínimo legível */
+}

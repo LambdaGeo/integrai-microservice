@@ -1,0 +1,52 @@
+# Imagem base R + Plumber
+FROM rstudio/plumber:latest
+
+# Diretório de trabalho
+WORKDIR /app
+
+
+# Instala dependências do sistema essenciais para compilar pacotes R
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libcurl4-openssl-dev \
+    libssl-dev \
+    libgit2-dev \
+    libxml2-dev \
+    libcairo2-dev \
+    libxt-dev \
+    libfontconfig1-dev \
+    libpng-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# -----------------------------
+# Copia e instala pacotes R
+# -----------------------------
+# Copia apenas o script de instalação para aproveitar cache
+COPY install_packages.R .
+
+# Instala pacotes R
+RUN Rscript install_packages.R
+
+
+COPY install_packages_new.R .
+
+# Instala pacotes R
+RUN Rscript install_packages_new.R
+# -----------------------------
+# Copia o restante da aplicação
+# -----------------------------
+COPY . .
+
+#RUN R -e "install.packages(c('caret', 'fastshap', 'dplyr'), repos='https://cloud.r-project.org')"
+
+#RUN R -e "install.packages(c('shapviz'), repos='https://cloud.r-project.org')"
+
+# -----------------------------
+# Expõe porta da API
+# -----------------------------
+EXPOSE 8000
+
+# -----------------------------
+# Executa a API
+# -----------------------------
+CMD ["Rscript", "run_api.R"]

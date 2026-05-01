@@ -1,0 +1,100 @@
+version: '3.8'
+
+services:
+  # Users Service
+  users-service:
+    build:
+      context: ./users-service
+      dockerfile: ../Dockerfile
+    container_name: users-service
+    ports:
+      - "8000:8000"
+    environment:
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key}
+      - DEBUG=${DEBUG:-True}
+      - DB_NAME=users_db
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_HOST=db
+      - DB_PORT=5432
+      - GESTANTES_SERVICE_URL=http://gestantes-service:8001
+      - AVALIACOES_SERVICE_URL=http://avaliacoes-service:8002
+    depends_on:
+      - db
+    volumes:
+      - ./users-service:/app
+    command: python manage.py runserver 0.0.0.0:8000
+
+  # Gestantes Service
+  gestantes-service:
+    build:
+      context: ./gestantes-service
+      dockerfile: ../Dockerfile
+    container_name: gestantes-service
+    ports:
+      - "8001:8001"
+    environment:
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key}
+      - DEBUG=${DEBUG:-True}
+      - DB_NAME=gestantes_db
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_HOST=db
+      - DB_PORT=5432
+      - USERS_SERVICE_URL=http://users-service:8000
+      - AVALIACOES_SERVICE_URL=http://avaliacoes-service:8002
+    depends_on:
+      - db
+    volumes:
+      - ./gestantes-service:/app
+    command: python manage.py runserver 0.0.0.0:8001
+
+  # Avaliacoes Service
+  avaliacoes-service:
+    build:
+      context: ./avaliacoes-service
+      dockerfile: ../Dockerfile
+    container_name: avaliacoes-service
+    ports:
+      - "8002:8002"
+    environment:
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key}
+      - DEBUG=${DEBUG:-True}
+      - DB_NAME=avaliacoes_db
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_HOST=db
+      - DB_PORT=5432
+      - USERS_SERVICE_URL=http://users-service:8000
+      - GESTANTES_SERVICE_URL=http://gestantes-service:8001
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./avaliacoes-service:/app
+    command: python manage.py runserver 0.0.0.0:8002
+
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: integrai-db
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_MULTIPLE_DATABASES=users_db,gestantes_db,avaliacoes_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: integrai-redis
+    ports:
+      - "6379:6379"
+
+volumes:
+  postgres_data:

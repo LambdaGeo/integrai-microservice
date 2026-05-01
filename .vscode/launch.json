@@ -1,0 +1,103 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: FastAPI (Local)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": [
+                "app.main:app",
+                "--host",
+                "0.0.0.0",
+                "--port",
+                "8000"
+            ],
+            "jinja": true,
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/users-service"
+            },
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Python: FastAPI (Debug Docker - users-service)",
+            "type": "debugpy",
+            "request": "attach",
+            "connect": {
+                "host": "localhost",
+                "port": 5678
+            },
+            "pathMappings": [
+                {
+                    "localRoot": "${workspaceFolder}/users-service",
+                    "remoteRoot": "/app"
+                }
+            ],
+            "justMyCode": true
+        },
+        {
+            "name": "Python: FastAPI (Debug Docker - gestantes-service)",
+            "type": "debugpy",
+            "request": "attach",
+            "connect": {
+                "host": "localhost",
+                "port": 5679
+            },
+            "pathMappings": [
+                {
+                    "localRoot": "${workspaceFolder}/gestantes-service/app",
+                    "remoteRoot": "/app/app"
+                }
+            ],
+            "justMyCode": true
+        },
+        {
+            "name": "Python: Django (Debug Docker)",
+            "type": "debugpy",
+            "request": "attach",
+            "connect": {
+                "host": "localhost",
+                "port": 5677
+            },
+            "pathMappings": [
+                {
+                    "localRoot": "${workspaceFolder}/django_app",
+                    "remoteRoot": "/app"
+                }
+            ],
+            "justMyCode": true
+        },
+        {
+            "name": "Python: Django (Local)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "django.core.management",
+            "args": [
+                "runserver",
+                "0.0.0.0:8001"
+            ],
+            "django": true,
+            "justMyCode": true,
+            "env": {
+                "DJANGO_SETTINGS_MODULE": "project.settings"
+            },
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Python: Current Test File",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "args": [
+                "${file}",
+                "-v",
+                "-s"
+            ],
+            "console": "integratedTerminal",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/users-service"
+            }
+        }
+    ]
+}

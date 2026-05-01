@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block content %}
+
+<div class="basic-container mt-4 mb-4">
+
+    <div class="form-login form-container"
+        style="box-shadow: 0 4px 12px rgba(0,0,0,0.1); border-radius: 12px; padding: 2rem;">
+
+        <h3 class="text-center mb-4">Meu Perfil</h3>
+
+        <div class="text-center mb-4">
+            {% if profile.foto %}
+                <img src="{{ profile.foto.url }}" 
+                     style="width:130px; height:130px; object-fit:cover; border-radius:50%; box-shadow:0 0 8px rgba(0,0,0,0.15);">
+            {% else %}
+                <img src="{% static 'img/default_user.png' %}" 
+                     style="width:130px; height:130px; object-fit:cover; border-radius:50%; opacity:0.6;">
+            {% endif %}
+        </div>
+
+        <ul class="list-group mb-4">
+            <li class="list-group-item"><strong>Nome Completo:</strong> {{ profile.nome }}</li>
+            <li class="list-group-item"><strong>CPF:</strong> {{ user.username }}</li>
+            <li class="list-group-item"><strong>Email:</strong> {{ user.email }}</li>
+            <li class="list-group-item"><strong>Área de Atuação:</strong> {{ profile.area }}</li>
+            <li class="list-group-item"><strong>UBS:</strong> {{ profile.UBS }}</li>
+        </ul>
+
+        <div class="d-flex justify-content-between mt-4">
+            <a href="{% url 'editar_perfil' %}" class="btn btn-primary" style="width:48%;">Editar Perfil</a>
+            <a href="{% url 'password_change' %}" class="btn btn-outline-secondary" style="width:48%;">Alterar Senha</a>
+        </div>
+
+    </div>
+</div>
+
+{% endblock %}

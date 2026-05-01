@@ -1,0 +1,32 @@
+/* Estilo para visualização em cards */
+.card-view .gestante-card {
+    display: block;
+}
+
+.list-view .gestante-card {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    width: 100%;
+}
+
+.list-view .gestante-card .card-body {
+    flex: 1;
+    padding: 15px;
+}
+
+.list-view .gestante-card img {
+    max-width: 100px;
+    margin-right: 20px;
+}
+
+/* Estilo para os botões ativos */
+.active {
+    background-color: #007bff;
+    color: white;
+}
+
+/* Garantir que a visualização em lista esteja oculta quando não for a ativa */
+.list-view .gestante-card {
+    display: flex;
+}

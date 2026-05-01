@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block content %}
+
+<div class="login-container">
+
+    <div class="ellipse-bg ellipse-1"></div>
+    <div class="ellipse-bg ellipse-2"></div>
+   
+
+    <img src="{% static 'assets/imagens/gestante/hero.png' %}" alt="Gestante" class="login-hero">
+
+        <div class="ellipse ellipse-tech">
+    <p class="ellipse-text">
+        A tecnologia<br>
+        que cuida<br>
+        da gestante e <br>do seu futuro bebê.
+    </p>
+    </div>
+
+      <div class="ellipse ellipse-custom"></div>
+
+    <div class="form-login text-center" style="opacity: 85%;">
+        <h2 class="login-slogan mb-3">Bem-vindo(a) <br> ao IntegrAI</h2>
+        <p class="login-intro">
+            Cuidando da mamãe para reduzir o risco de doenças crônicas no futuro bebê.
+        </p>
+
+        <div class="d-flex flex-column gap-3" >
+            <a href="{% url 'login' %}" class="btn-primary btn-login">Entrar</a>
+            <a href="{% url 'cadastro' %}" class="btn-secondary btn-login">Cadastre-se</a>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

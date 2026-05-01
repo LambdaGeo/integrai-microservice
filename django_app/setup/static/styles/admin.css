@@ -1,0 +1,39 @@
+/* ===========================
+   Identidade Visual IntegrAI
+   =========================== */
+:root {
+    --primaria: #5A55A0;
+    --primaria-clara: #8E94F2;
+    --secundaria: #504F8C;
+    --destaque: #DAB6FC;
+    --fundo-claro: #F9F9FB;
+    font-family: 'Chilax', sans-serif;
+}
+
+/* Fonte e fundo geral */
+body, #header, #content, .module {
+    font-family: 'Chilax', sans-serif;
+    background: var(--fundo-claro);
+    color: #333;
+}
+
+/* ===========================
+   Cabeçalho
+   =========================== */
+#header {
+    background: var(--primaria);
+    padding: 10px 20px;
+    border-bottom: 4px solid var(--destaque);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+}
+#header h1 a {
+    color: #fff !important;
+    font-weight: bold;
+    text-decoration: none;
+}
+#user-tools {
+    color: #fff;
+}
+
+/* ===========================
+   Menu lateral / brea
