@@ -2,7 +2,6 @@
 # Importações principais do Django
 # ======================================
 from django.shortcuts import render, get_object_or_404, redirect
-from django.contrib.auth.decorators import login_required
 from django.utils import timezone
 
 import hmac
@@ -13,6 +12,7 @@ from django.conf import settings
 # Importações de apps locais
 # ======================================
 from apps.gestantes.models import Gestante, Avaliacao, Pilula
+from apps.usuarios.decorator import login_required_message
 
 from apps.gestantes.literals import NOMES_FATORES
 from apps.gestantes.services import gerar_token
@@ -32,6 +32,7 @@ def resumo_riscos_api(request, gestante_id):
 # Função: Comunica
 # Mostra pílulas de comunicação
 # =========================================================
+@login_required_message
 def comunica(request, gestante_id):
     # Busca a gestante
     gestante = get_object_or_404(Gestante, pk=gestante_id)
@@ -61,6 +62,7 @@ def comunica(request, gestante_id):
     })
 
 
+@login_required_message
 def pilulas(request, gestante_id):
     # Busca a gestante
     gestante = get_object_or_404(Gestante, pk=gestante_id)
@@ -101,7 +103,7 @@ def pilulas(request, gestante_id):
 # =========================================================
 from django.http import JsonResponse
 
-@login_required
+@login_required_message
 def atualizar_status_pilula(request, pilula_id):
     pilula = get_object_or_404(Pilula, pk=pilula_id)
 

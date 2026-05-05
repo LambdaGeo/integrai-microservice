@@ -66,6 +66,7 @@
                     "remoteRoot": "/app"
                 }
             ],
+            "django": true,
             "justMyCode": true
         },
         {

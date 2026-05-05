@@ -3,7 +3,6 @@
 # ======================================
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
-from django.contrib.auth.decorators import login_required
 
 # ======================================
 # Importações de apps locais
@@ -15,14 +14,14 @@ from apps.usuarios.decorator import login_required_message
 # Função: Revogar Consentimento
 # Cria um registro de consentimento com status "revogado"
 # =========================================================
-@login_required
+@login_required_message
 def revogar_consentimento(request, gestante_id):
     gestante = get_object_or_404(Gestante, id=gestante_id)
 
     if request.method == 'POST':
         ConsentimentoGestante.objects.create(
             gestante=gestante,
-            usuario=request.user,
+            usuario_id=request.user.id,
             status='revogado'
         )
     return redirect('index')  # Redireciona para a página principal
@@ -33,27 +32,17 @@ def revogar_consentimento(request, gestante_id):
 # Lista gestantes do usuário logado e mostra cards
 # =========================================================
 def index(request):
-    if not request.session.get('microservice_authenticated'):
-    # if not request.user.is_authenticated:
+    if not request.user.is_authenticated:
         return redirect('home')
 
-    # Recupera o ID do usuário da sessão
-    from django.core.cache import cache
-    username = request.session.get('microservice_user_id')
-    user_data = cache.get(f'microservice_user_{username}')
-    user_id = user_data.get('id') if user_data else None
-
-    # Usa o ID diretamente em vez de request.user
-    gestantes_user = Gestante.objects.filter(usuario_id=user_id).order_by("-data_cadastro")
-    
-    gestantes = [g for g in gestantes_user if g.consentimento_ativo]
     show_welcome = request.session.pop('show_welcome', False)
+    gestantes = Gestante.objects.filter(usuario_id=request.user.id).order_by("-data_cadastro")
+    gestantes = [g for g in gestantes if g.consentimento_ativo]
 
     return render(request, 'gestantes/crud/painel.html', {
         "cards": gestantes,
         "show_welcome": show_welcome,
     })
-
 
 # =========================================================
 # Função: Buscar Gestantes
@@ -61,12 +50,7 @@ def index(request):
 # =========================================================
 @login_required_message
 def buscar(request):
-    from django.core.cache import cache
-    username = request.session.get('microservice_user_id')
-    user_data = cache.get(f'microservice_user_{username}')
-    user_id = user_data.get('id') if user_data else None
-
-    gestantes = Gestante.objects.filter(usuario_id=user_id).order_by("data_cadastro")
+    gestantes = Gestante.objects.filter(usuario_id=request.user.id).order_by("data_cadastro")
 
     if "buscar" in request.GET:
         nome_a_buscar = request.GET['buscar']
@@ -95,12 +79,12 @@ def nova_gestante(request):
 
         if form.is_valid():
             gestante = form.save(commit=False)
-            gestante.usuario = request.user
+            gestante.usuario_id = request.user.id
             gestante.save()
 
             ConsentimentoGestante.objects.create(
                 gestante=gestante,
-                usuario=request.user,
+                usuario_id=request.user.id,
                 status='aceito'
             )
 

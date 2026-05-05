@@ -4,7 +4,7 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
 from django.urls import reverse
-from django.contrib.auth.decorators import login_required
+from apps.usuarios.decorator import login_required_message
 
 # ======================================
 # Importações de apps locais
@@ -22,7 +22,7 @@ from apps.gestantes.services import gerar_token
 # Função: Detalhes da Gestante
 # Mostra informações e evolução de riscos
 # =========================================================
-@login_required
+@login_required_message
 def gestante(request, gestante_id):
     if not request.user.is_authenticated:
         messages.error(request, 'Usuário não logado')
@@ -60,7 +60,7 @@ def gestante(request, gestante_id):
 # Função: Avaliação
 # Cria nova avaliação associada à gestante
 # =========================================================
-@login_required
+@login_required_message
 def avaliacao(request, gestante_id):
     gestante = get_object_or_404(Gestante, id=gestante_id)
 
@@ -84,7 +84,7 @@ def avaliacao(request, gestante_id):
 
     return render(request, 'gestantes/avaliacao/questionario.html', {'form': form, 'gestante': gestante})
 
-@login_required
+@login_required_message
 def avaliacao_status(request, gestante_id):
     tipo = request.GET.get("tipo", "sintese")  # llm como padrão
 
