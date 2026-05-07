@@ -5,7 +5,6 @@ from django.utils import timezone
 
 
 class Avaliacao(models.Model):
-
     STATUS_LLM_CHOICES = [
         ('PENDING', 'Pendente'),
         ('PROCESSING', 'Processando LLM'),
