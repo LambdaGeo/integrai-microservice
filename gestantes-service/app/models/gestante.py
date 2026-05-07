@@ -60,6 +60,14 @@ class Gestante(Base):
             return None
         return re.sub(r"\D", "", self.telefone)
 
+    @property
+    def consentimento_ativo(self) -> bool:
+        """Verifica se o último consentimento é ativo (aceito)."""
+        if not self.consentimentos:
+            return True  # Se não há consentimentos, assume ativo (compatibilidade)
+        # Ordena por data_registro descendente e pega o mais recente
+        ultimo_consentimento = sorted(self.consentimentos, key=lambda c: c.data_registro, reverse=True)[0]
+        return ultimo_consentimento.status == "aceito"
 
 class ConsentimentoGestante(Base):
     __tablename__ = "consentimentos_gestante"

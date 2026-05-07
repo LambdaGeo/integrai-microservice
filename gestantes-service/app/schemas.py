@@ -81,6 +81,7 @@ class GestanteResponse(GestanteBase):
     idade: int
     imc_classificacao: str
     telefone_whatsapp: Optional[str] = None
+    consentimento_ativo: bool = True
 
     class Config:
         from_attributes = True

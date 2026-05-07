@@ -1,14 +1,10 @@
-from django.db import models
-from django.conf import settings
-from django.utils import timezone
 from datetime import timedelta
+
+from django.db import models
+from django.utils import timezone
 
 
 class Avaliacao(models.Model):
-    PARTO_CHOICES = [
-        ('Vaginal', 'Vaginal'),
-        ('Cesáreo', 'Cesáreo'),
-    ]
 
     STATUS_LLM_CHOICES = [
         ('PENDING', 'Pendente'),
@@ -24,6 +20,10 @@ class Avaliacao(models.Model):
     consultas_prenatal = models.PositiveIntegerField(verbose_name="Quantidade de consultas pré-natal", null=True)
     
     # Questionário SIM/P
+    gestante = models.PositiveIntegerField(db_index=True)
+    data_aplicacao = models.DateTimeField(verbose_name="Data da Avaliacao", default=timezone.now)
+    peso_atual = models.FloatField(verbose_name="Peso atual:", null=True, blank=True)
+    idade_gestacional = models.PositiveIntegerField(verbose_name="Idade Gestacional (em semanas)", null=True, blank=True)
     corrimento_vaginal = models.BooleanField(default=False, verbose_name='Corrimento vaginal frequente?')
     periodontite_carie = models.BooleanField(default=False, verbose_name='Cárie e/ou periodontite?')
     hipertensao_gestacao = models.BooleanField(default=False, verbose_name='Hipertensão na gestação?')

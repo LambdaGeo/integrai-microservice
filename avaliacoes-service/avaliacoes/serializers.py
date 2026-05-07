@@ -3,7 +3,7 @@ from .models import Avaliacao, Pilula
 
 
 class AvaliacaoSerializer(serializers.ModelSerializer):
-    gestante_nome = serializers.CharField(source='gestante.nome', read_only=True)
+    gestante_nome = serializers.SerializerMethodField()
     ganho_peso = serializers.ReadOnlyField()
     top_fatores_str = serializers.ReadOnlyField()
     
@@ -20,9 +20,12 @@ class AvaliacaoSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'data_aplicacao']
 
+    def get_gestante_nome(self, obj):
+        return f"Gestante {obj.gestante}"
+
 
 class PilulaSerializer(serializers.ModelSerializer):
-    avaliacao_gestante = serializers.CharField(source='avaliacao.gestante.nome', read_only=True)
+    avaliacao_gestante = serializers.SerializerMethodField()
     semana_ord = serializers.ReadOnlyField()
     periodo_envio = serializers.ReadOnlyField()
     
@@ -34,3 +37,6 @@ class PilulaSerializer(serializers.ModelSerializer):
             'status', 'periodo_envio'
         ]
         read_only_fields = ['id', 'data_geracao']
+
+    def get_avaliacao_gestante(self, obj):
+        return f"Gestante {obj.avaliacao.gestante}"

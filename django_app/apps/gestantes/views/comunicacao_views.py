@@ -11,7 +11,8 @@ from django.conf import settings
 # ======================================
 # Importações de apps locais
 # ======================================
-from apps.gestantes.models import Gestante, Avaliacao, Pilula
+# DESABILITADO: Modelos migrados para microservice gestantes-service
+# from apps.gestantes.models import Gestante, Avaliacao, Pilula
 from apps.usuarios.decorator import login_required_message
 
 from apps.gestantes.literals import NOMES_FATORES

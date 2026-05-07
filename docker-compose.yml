@@ -39,9 +39,15 @@ services:
       gestantes-service:
         condition: service_healthy
     environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
       - REDIS_URL=${REDIS_URL}
       - USERS_SERVICE_URL=http://users-service:8000
       - GESTANTES_SERVICE_URL=http://gestantes-service:8001
+      - AVALIACOES_SERVICE_URL=http://avaliacoes-service:8002
       - DJANGO_SUPERUSER_USERNAME=${DJANGO_SUPERUSER_USERNAME}
       - DJANGO_SUPERUSER_EMAIL=${DJANGO_SUPERUSER_EMAIL}
       - DJANGO_SUPERUSER_PASSWORD=${DJANGO_SUPERUSER_PASSWORD}
@@ -172,6 +178,63 @@ services:
 
   
     # 2. SERVIÇO REDIS (O BROKER)
+  # ============================================================
+  # Servico: Banco isolado do Avaliacoes Service
+  # ============================================================
+  avaliacoes-db:
+    image: postgres:13
+    container_name: microservice_avaliacoes_db
+    environment:
+      POSTGRES_DB: ${AVALIACOES_DB_NAME:-avaliacoes_db}
+      POSTGRES_USER: ${AVALIACOES_DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${AVALIACOES_DB_PASSWORD:-postgres}
+    volumes:
+      - avaliacoes_db_data:/var/lib/postgresql/data
+    ports:
+      - "5435:5432"
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================
+  # Servico: Avaliacoes Service (Django REST)
+  # ============================================================
+  avaliacoes-service:
+    build:
+      context: ./avaliacoes-service
+      dockerfile: Dockerfile
+    container_name: microservice_avaliacoes_service
+    volumes:
+      - ./avaliacoes-service:/app
+    ports:
+      - "8004:8002"
+    depends_on:
+      avaliacoes-db:
+        condition: service_healthy
+    environment:
+      - DEBUG=True
+      - ALLOWED_HOSTS=localhost,127.0.0.1,avaliacoes-service,0.0.0.0
+      - DB_HOST=avaliacoes-db
+      - DB_PORT=5432
+      - DB_NAME=${AVALIACOES_DB_NAME:-avaliacoes_db}
+      - DB_USER=${AVALIACOES_DB_USER:-postgres}
+      - DB_PASSWORD=${AVALIACOES_DB_PASSWORD:-postgres}
+      - USERS_SERVICE_URL=http://users-service:8000
+      - GESTANTES_SERVICE_URL=http://gestantes-service:8001
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   redis:
     image: redis:7-alpine
     container_name: redis
@@ -230,3 +293,4 @@ volumes:
   db_data:
   users_db_data:
   gestantes_db_data:
+  avaliacoes_db_data:

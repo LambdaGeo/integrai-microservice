@@ -2,7 +2,8 @@ from django.contrib import admin
 
 from datetime import timedelta
 
-from apps.gestantes.models import Gestante, Avaliacao, ConsentimentoGestante, Pilula
+# DESABILITADO: Modelos migrados para microservice gestantes-service
+# from apps.gestantes.models import Gestante, Avaliacao, ConsentimentoGestante, Pilula
 
 
 admin.site.site_header = "Administrador do Site"  # Título do cabeçalho

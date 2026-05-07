@@ -15,10 +15,11 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import path, include, re_path
 
 from django.conf import settings
 from django.conf.urls.static import static
+from django.views.static import serve as static_serve
 
 from django.contrib.auth import views as auth_views
 
@@ -37,4 +38,12 @@ urlpatterns = [
         path("senha/alterar/", auth_views.PasswordChangeView.as_view(template_name="usuarios/alterar_senha.html"), name="password_change"),
         path("senha/alterar/sucesso/", auth_views.PasswordChangeDoneView.as_view(template_name="usuarios/senha_alterada.html"), name="password_change_done"),
 
-] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+]
+
+if settings.DEBUG:
+        urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+        urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+else:
+        urlpatterns += [
+                re_path(r'^static/(?P<path>.*)$', static_serve, {'document_root': settings.STATIC_ROOT}),
+        ]

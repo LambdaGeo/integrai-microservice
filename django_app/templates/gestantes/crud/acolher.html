@@ -69,6 +69,11 @@
                             >
                             <img id="previewFoto" src="#" alt="Pré-visualização" 
                                 style="display:none; max-width:100%; margin-top:1em; border-radius:8px;">
+                        {% elif field.field.widget.input_type == "select" %}
+                            {{ field|add_class:"form-select" }}
+                            {% if field.help_text %}
+                                <small class="form-text text-muted">{{ field.help_text|safe }}</small>
+                            {% endif %}
                         {% else %}
                             {{ field|add_class:"form-control" }}
                             {% if field.help_text %}

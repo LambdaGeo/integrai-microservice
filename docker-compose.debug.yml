@@ -22,10 +22,7 @@ services:
       - DEBUG=True
 
   django:
-    entrypoint: ["sh", "-c"]
-    command: >
-      "pip install debugpy &&
-       python -m debugpy --listen 0.0.0.0:5677 --wait-for-client manage.py runserver 0.0.0.0:8001 --noreload"
+    command: ["sh", "-c", "pip install debugpy && python -m debugpy --listen 0.0.0.0:5677 --wait-for-client manage.py runserver 0.0.0.0:8001 --noreload"]
     ports:
       - "8000:8001"
       - "5677:5677"

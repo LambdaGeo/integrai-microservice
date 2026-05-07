@@ -2,6 +2,7 @@ ESTRUTURA DO PROJETO
 ================================================================================
 [FILE] apagar
 [DIR]  avaliacoes-service/
+    [FILE] Dockerfile
     [FILE] README.md
     [DIR]  avaliacoes/
         [FILE] __init__.py
@@ -39,8 +40,6 @@ ESTRUTURA DO PROJETO
                 [DIR]  commands/
                     [FILE] export_data.py
             [DIR]  migrations/
-                [FILE] 0001_initial.py
-                [FILE] 0002_avaliacao_status_processamento_pills.py
                 [FILE] __init__.py
             [FILE] models.py
             [FILE] services.py
@@ -62,9 +61,11 @@ ESTRUTURA DO PROJETO
             [FILE] backends.py
             [FILE] decorator.py
             [FILE] forms.py
+            [FILE] middleware.py
             [DIR]  migrations/
                 [FILE] __init__.py
             [FILE] models.py
+            [FILE] services.py
             [FILE] tests.py
             [FILE] urls.py
             [FILE] views.py
@@ -72,6 +73,9 @@ ESTRUTURA DO PROJETO
     [FILE] entrypoint_producao.sh
     [FILE] manage.py
     [DIR]  media/
+        [DIR]  fotos/
+            [DIR]  Ingrid_Santos_1eb8f93d/
+                [FILE] sopa_de_camarão.jpg
         [DIR]  fotos_agentes/
             [FILE] maycu.png
     [DIR]  microservices/
@@ -594,7 +598,7 @@ services:
   users-service:
     command: >
       sh -c "pip install debugpy &&
-             python -m debugpy --listen 0.0.0.0:5678 --wait-for-client -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+             python -m debugpy --listen 0.0.0.0:5678 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     ports:
       - "8003:8000"
       - "5678:5678"
@@ -612,15 +616,13 @@ services:
       - DEBUG=True
 
   django:
-    entrypoint: []
-    command: >
-      sh -c "pip install debugpy &&
-             python -m debugpy --listen 0.0.0.0:5677 manage.py runserver 0.0.0.0:8001"
+    command: ["sh", "-c", "pip install debugpy && python -m debugpy --listen 0.0.0.0:5677 --wait-for-client manage.py runserver 0.0.0.0:8001 --noreload"]
     ports:
       - "8000:8001"
       - "5677:5677"
     environment:
       - DEBUG=True
+
 
 ========== .\docker-compose.yml ==========
 
@@ -665,9 +667,15 @@ services:
       gestantes-service:
         condition: service_healthy
     environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
       - REDIS_URL=${REDIS_URL}
       - USERS_SERVICE_URL=http://users-service:8000
       - GESTANTES_SERVICE_URL=http://gestantes-service:8001
+      - AVALIACOES_SERVICE_URL=http://avaliacoes-service:8002
       - DJANGO_SUPERUSER_USERNAME=${DJANGO_SUPERUSER_USERNAME}
       - DJANGO_SUPERUSER_EMAIL=${DJANGO_SUPERUSER_EMAIL}
       - DJANGO_SUPERUSER_PASSWORD=${DJANGO_SUPERUSER_PASSWORD}
@@ -798,6 +806,63 @@ services:
 
   
     # 2. SERVIÇO REDIS (O BROKER)
+  # ============================================================
+  # Servico: Banco isolado do Avaliacoes Service
+  # ============================================================
+  avaliacoes-db:
+    image: postgres:13
+    container_name: microservice_avaliacoes_db
+    environment:
+      POSTGRES_DB: ${AVALIACOES_DB_NAME:-avaliacoes_db}
+      POSTGRES_USER: ${AVALIACOES_DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${AVALIACOES_DB_PASSWORD:-postgres}
+    volumes:
+      - avaliacoes_db_data:/var/lib/postgresql/data
+    ports:
+      - "5435:5432"
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================
+  # Servico: Avaliacoes Service (Django REST)
+  # ============================================================
+  avaliacoes-service:
+    build:
+      context: ./avaliacoes-service
+      dockerfile: Dockerfile
+    container_name: microservice_avaliacoes_service
+    volumes:
+      - ./avaliacoes-service:/app
+    ports:
+      - "8004:8002"
+    depends_on:
+      avaliacoes-db:
+        condition: service_healthy
+    environment:
+      - DEBUG=True
+      - ALLOWED_HOSTS=localhost,127.0.0.1,avaliacoes-service,0.0.0.0
+      - DB_HOST=avaliacoes-db
+      - DB_PORT=5432
+      - DB_NAME=${AVALIACOES_DB_NAME:-avaliacoes_db}
+      - DB_USER=${AVALIACOES_DB_USER:-postgres}
+      - DB_PASSWORD=${AVALIACOES_DB_PASSWORD:-postgres}
+      - USERS_SERVICE_URL=http://users-service:8000
+      - GESTANTES_SERVICE_URL=http://gestantes-service:8001
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   redis:
     image: redis:7-alpine
     container_name: redis
@@ -856,6 +921,7 @@ volumes:
   db_data:
   users_db_data:
   gestantes_db_data:
+  avaliacoes_db_data:
 
 
 ========== .\dump.py ==========
@@ -909,6 +975,31 @@ with open(saida, "w", encoding="utf-8") as out:
 
 ========== .\dump_completo.txt ==========
 
+
+
+========== .\avaliacoes-service\Dockerfile ==========
+
+FROM python:3.10.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gcc libpq-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.txt /app/requirements.txt
+RUN pip install --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
+
+COPY . /app/
+
+EXPOSE 8002
+
+CMD ["sh", "-c", "python manage.py migrate --run-syncdb --noinput && python manage.py runserver 0.0.0.0:8002"]
 
 
 ========== .\avaliacoes-service\README.md ==========
@@ -988,52 +1079,44 @@ class AvaliacoesConfig(AppConfig):
 
 ========== .\avaliacoes-service\avaliacoes\models.py ==========
 
-from django.db import models
-from django.conf import settings
-from django.utils import timezone
 from datetime import timedelta
+
+from django.db import models
+from django.utils import timezone
 
 
 class Avaliacao(models.Model):
-    PARTO_CHOICES = [
-        ('Vaginal', 'Vaginal'),
-        ('Cesáreo', 'Cesáreo'),
-    ]
-
     STATUS_LLM_CHOICES = [
         ('PENDING', 'Pendente'),
         ('PROCESSING', 'Processando LLM'),
-        ('COMPLETED', 'LLM Concluído'),
+        ('COMPLETED', 'LLM Concluido'),
         ('FAILED', 'LLM Falhou'),
     ]
 
-    gestante = models.ForeignKey('Gestante', on_delete=models.CASCADE, related_name='questionarios')
-    data_aplicacao = models.DateTimeField(verbose_name="Data da Avaliação", default=timezone.now)
-    peso_atual = models.FloatField(verbose_name="Peso atual:", null=True)
-    idade_gestacional = models.PositiveIntegerField(verbose_name="Idade Gestacional (em semanas)", null=True)
-    consultas_prenatal = models.PositiveIntegerField(verbose_name="Quantidade de consultas pré-natal", null=True)
-    
-    # Questionário SIM/P
+    gestante = models.PositiveIntegerField(db_index=True)
+    data_aplicacao = models.DateTimeField(verbose_name="Data da Avaliacao", default=timezone.now)
+    peso_atual = models.FloatField(verbose_name="Peso atual:", null=True, blank=True)
+    idade_gestacional = models.PositiveIntegerField(verbose_name="Idade Gestacional (em semanas)", null=True, blank=True)
+    consultas_prenatal = models.PositiveIntegerField(verbose_name="Quantidade de consultas pre-natal", null=True, blank=True)
+
     corrimento_vaginal = models.BooleanField(default=False, verbose_name='Corrimento vaginal frequente?')
-    periodontite_carie = models.BooleanField(default=False, verbose_name='Cárie e/ou periodontite?')
-    hipertensao_gestacao = models.BooleanField(default=False, verbose_name='Hipertensão na gestação?')
-    diabetes_gestacao = models.BooleanField(default=False, verbose_name='Diabetes na gestação?')
-    estresse_gestacao = models.BooleanField(default=False, verbose_name='Estresse durante gestação?')
-    historico_familiar_alergia = models.BooleanField(default=False, verbose_name='Histórico familiar de alergia?')
-    consumo_bebidas_adocadas = models.BooleanField(default=False, verbose_name='Consumo de bebidas adoçadas?')
+    periodontite_carie = models.BooleanField(default=False, verbose_name='Carie e/ou periodontite?')
+    hipertensao_gestacao = models.BooleanField(default=False, verbose_name='Hipertensao na gestacao?')
+    diabetes_gestacao = models.BooleanField(default=False, verbose_name='Diabetes na gestacao?')
+    estresse_gestacao = models.BooleanField(default=False, verbose_name='Estresse durante gestacao?')
+    historico_familiar_alergia = models.BooleanField(default=False, verbose_name='Historico familiar de alergia?')
+    consumo_bebidas_adocadas = models.BooleanField(default=False, verbose_name='Consumo de bebidas adocadas?')
     consumo_ultraprocessados = models.BooleanField(default=False, verbose_name='Consumo de ultraprocessados?')
-    consumo_alcool = models.BooleanField(default=False, verbose_name='Consumo de álcool?')
+    consumo_alcool = models.BooleanField(default=False, verbose_name='Consumo de alcool?')
     fumante_gestacao = models.BooleanField(default=False, verbose_name='Fumante?')
 
     resultado_integralidade_saude = models.JSONField(null=True, blank=True)
     status_processamento_llm = models.CharField(max_length=20, choices=STATUS_LLM_CHOICES, default='PENDING')
     status_processamento_pills = models.CharField(max_length=20, choices=STATUS_LLM_CHOICES, default='PENDING')
-    llm_sintese = models.TextField(null=True, blank=True, verbose_name="Síntese gerada pela LLM")
+    llm_sintese = models.TextField(null=True, blank=True, verbose_name="Sintese gerada pela LLM")
 
     @property
     def ganho_peso(self):
-        if self.gestante and self.gestante.peso and self.peso_atual:
-            return round(self.peso_atual - self.gestante.peso, 2)
         return None
 
     @property
@@ -1048,18 +1131,18 @@ class Avaliacao(models.Model):
 
     class Meta:
         verbose_name = 'Avaliacao'
-        verbose_name_plural = 'Avaliações'
+        verbose_name_plural = 'Avaliacoes'
         ordering = ['gestante', 'data_aplicacao']
 
     def __str__(self):
-        return f"Questionário de {self.gestante.nome} em {self.data_aplicacao.strftime('%d/%m/%Y')}"
+        return f"Questionario da gestante {self.gestante} em {self.data_aplicacao.strftime('%d/%m/%Y')}"
 
 
 class Pilula(models.Model):
     avaliacao = models.ForeignKey(Avaliacao, on_delete=models.CASCADE, related_name='pilulas')
-    titulo = models.CharField(max_length=200, verbose_name="Título da Pílula")
-    conteudo = models.TextField(verbose_name="Conteúdo da Pílula", blank=True, null=True)
-    semana_num = models.PositiveIntegerField(verbose_name="Número da semana", null=True, blank=True)
+    titulo = models.CharField(max_length=200, verbose_name="Titulo da Pilula")
+    conteudo = models.TextField(verbose_name="Conteudo da Pilula", blank=True, null=True)
+    semana_num = models.PositiveIntegerField(verbose_name="Numero da semana", null=True, blank=True)
     data_geracao = models.DateTimeField(auto_now_add=True)
     data_envio = models.DateTimeField(null=True, blank=True, verbose_name="Data de envio")
 
@@ -1073,8 +1156,8 @@ class Pilula(models.Model):
 
     class Meta:
         ordering = ['avaliacao', 'semana_num', 'data_geracao']
-        verbose_name = "Pílula de Conhecimento"
-        verbose_name_plural = "Pílulas de Conhecimento"
+        verbose_name = "Pilula de Conhecimento"
+        verbose_name_plural = "Pilulas de Conhecimento"
 
     @property
     def data_inicio_envio(self):
@@ -1095,7 +1178,7 @@ class Pilula(models.Model):
     def semana_ord(self):
         if not self.semana_num:
             return None
-        return f"{self.semana_num}ª"
+        return f"{self.semana_num}a"
 
     def marcar_enviada(self):
         self.status = 'enviada'
@@ -1107,6 +1190,7 @@ class Pilula(models.Model):
             return f"{self.semana_ord} semana - {self.titulo} ({self.status})"
         return f"{self.titulo} ({self.status})"
 
+
 ========== .\avaliacoes-service\avaliacoes\serializers.py ==========
 
 from rest_framework import serializers
@@ -1114,7 +1198,7 @@ from .models import Avaliacao, Pilula
 
 
 class AvaliacaoSerializer(serializers.ModelSerializer):
-    gestante_nome = serializers.CharField(source='gestante.nome', read_only=True)
+    gestante_nome = serializers.SerializerMethodField()
     ganho_peso = serializers.ReadOnlyField()
     top_fatores_str = serializers.ReadOnlyField()
     
@@ -1131,9 +1215,12 @@ class AvaliacaoSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'data_aplicacao']
 
+    def get_gestante_nome(self, obj):
+        return f"Gestante {obj.gestante}"
+
 
 class PilulaSerializer(serializers.ModelSerializer):
-    avaliacao_gestante = serializers.CharField(source='avaliacao.gestante.nome', read_only=True)
+    avaliacao_gestante = serializers.SerializerMethodField()
     semana_ord = serializers.ReadOnlyField()
     periodo_envio = serializers.ReadOnlyField()
     
@@ -1146,23 +1233,31 @@ class PilulaSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'data_geracao']
 
+    def get_avaliacao_gestante(self, obj):
+        return f"Gestante {obj.avaliacao.gestante}"
+
+
 ========== .\avaliacoes-service\avaliacoes\urls.py ==========
 
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import AvaliacaoViewSet, PilulaViewSet
+from .views import AvaliacaoViewSet, PilulaViewSet, health
 
 router = DefaultRouter()
 router.register(r'avaliacoes', AvaliacaoViewSet)
 router.register(r'pilulas', PilulaViewSet)
 
 urlpatterns = [
+    path('health', health, name='health'),
     path('', include(router.urls)),
 ]
+
 
 ========== .\avaliacoes-service\avaliacoes\views.py ==========
 
 from rest_framework import viewsets, permissions
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.response import Response
 from .models import Avaliacao, Pilula
 from .serializers import AvaliacaoSerializer, PilulaSerializer
 
@@ -1170,15 +1265,22 @@ from .serializers import AvaliacaoSerializer, PilulaSerializer
 class AvaliacaoViewSet(viewsets.ModelViewSet):
     queryset = Avaliacao.objects.all()
     serializer_class = AvaliacaoSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    permission_classes = [permissions.AllowAny]
     filterset_fields = ['gestante', 'status_processamento_llm', 'status_processamento_pills']
 
 
 class PilulaViewSet(viewsets.ModelViewSet):
     queryset = Pilula.objects.all()
     serializer_class = PilulaSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    permission_classes = [permissions.AllowAny]
     filterset_fields = ['avaliacao', 'status']
+
+
+@api_view(['GET'])
+@permission_classes([permissions.AllowAny])
+def health(request):
+    return Response({"status": "healthy"})
+
 
 ========== .\avaliacoes-service\avaliacoes\fhir\serializers.py ==========
 
@@ -1891,7 +1993,8 @@ from django.contrib import admin
 
 from datetime import timedelta
 
-from apps.gestantes.models import Gestante, Avaliacao, ConsentimentoGestante, Pilula
+# DESABILITADO: Modelos migrados para microservice gestantes-service
+# from apps.gestantes.models import Gestante, Avaliacao, ConsentimentoGestante, Pilula
 
 
 admin.site.site_header = "Administrador do Site"  # Título do cabeçalho
@@ -1978,68 +2081,77 @@ class GestantesConfig(AppConfig):
 from django import forms
 
 import django_rq
-
-from apps.gestantes.models import Gestante, Avaliacao
-
 import re
+from datetime import datetime
 
-from . import services # usar sincrono por enquanto, depois configurar redis/celery
+# DESABILITADO: Modelos migrados para microservice gestantes-service
+# from apps.gestantes.models import Gestante, Avaliacao
+# from . import services
+# from apps.gestantes.tasks import gerar_sintese_llm_task, gerar_pilulas_task
 
-# --- INÍCIO DA INTEGRAÇÃO COM A API R ---
-from apps.gestantes.tasks import gerar_sintese_llm_task, gerar_pilulas_task
 
-class GestanteForms(forms.ModelForm):
-    class Meta:
-        model = Gestante
-        exclude = ["usuario"]
-        
-        # Definindo a ordem explícita
-        fields = [
-            'nome',
-            'foto',
-            'telefone',
-            'data_nascimento',
-            'altura',
-            'peso',
-            'vulnerabilidade_social'
-            
-        ]
-
-        labels = {
-            'data_cadastro': 'Data da inserção',
-            'usuario': 'Usuário',
-        }
-
-        help_texts = {
-            'vulnerabilidade_social': (
-                '<span class="fw-bold text-danger">⚠ NÃO PERGUNTAR À GESTANTE!</span><br>'
-                'Este campo deve ser marcado por você com base nas suas visitas domiciliares: '
-            ),
-        }
-
-        widgets = {
-            'nome': forms.TextInput(attrs={'class':'form-control'}),
-            'foto': forms.FileInput(attrs={'class':'form-control'}),
-            'data_fotografia': forms.DateInput(
-                format='%Y-%m-%d',
-                attrs={'type':'date', 'class':'form-control'}
-            ),
-            
-            'telefone': forms.TextInput(attrs={
+# Forma simples para criação de gestantes via API microservice
+# Esta classe não herda de ModelForm pois o modelo foi migrado
+class GestanteForms(forms.Form):
+    """Formulário para criar/editar gestantes via API microservice"""
+    
+    nome = forms.CharField(
+        max_length=100,
+        required=True,
+        label="Nome Completo",
+        widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Nome da gestante'})
+    )
+    
+    foto = forms.ImageField(
+        required=False,
+        label="Foto",
+        widget=forms.FileInput(attrs={'class': 'form-control'})
+    )
+    
+    telefone = forms.CharField(
+        max_length=20,
+        required=False,
+        label="Telefone (preferencialmente WhatsApp)",
+        widget=forms.TextInput(attrs={
             'class': 'form-control',
-                'placeholder': 'Ex.: (83) 99999-1234 — preferencialmente WhatsApp'
-            }),
-
-            'altura': forms.NumberInput(
-                attrs={'class': 'form-control', 'step': '0.01', 'inputmode': 'decimal', 'placeholder': 'Digite a altura (ex: 1,58)'}
-            ),
-            'data_nascimento': forms.DateInput(
-                format='%Y-%m-%d',
-                attrs={'type': 'date', 'class': 'form-control'}
-            ),
-
-
-        }
+            'placeholder': 'Ex.: (83) 99999-1234'
+        })
+    )
+    
+    data_nascimento = forms.DateField(
+        required=True,
+        label="Data de Nascimento",
+        widget=forms.DateInput(
+            format='%Y-%m-%d',
+            attrs={'type': 'date', 'class': 'form-control'}
+        )
+    )
+    
+    altura = forms.FloatField(
+        required=True,
+        label="Altura (m)",
+        widget=forms.NumberInput(
+            attrs={'class': 'form-control', 'step': '0.01', 'placeholder': 'Ex: 1.58'}
+        )
+    )
+    
+    peso = forms.IntegerField(
+        required=True,
+        label="Peso pré-gestacional (kg)",
+        widget=forms.NumberInput(attrs={'class': 'form-control', 'placeholder': 'Ex: 70'})
+    )
+    
+    VULNERABILIDADE_CHOICES = [
+        (True, 'Sim'),
+        (False, 'Não'),
+    ]
+    vulnerabilidade_social = forms.TypedChoiceField(
+        required=False,
+        choices=VULNERABILIDADE_CHOICES,
+        coerce=lambda value: value == 'True',
+        widget=forms.Select(attrs={'class': 'form-select'}),
+        label='Com base nas suas visitas domiciliares, considera essa gestante em vulnerabilidade social?'
+    )
     
     def clean_altura(self):
         altura = self.cleaned_data.get('altura')
@@ -2048,7 +2160,10 @@ class GestanteForms(forms.ModelForm):
         if isinstance(altura, str):
             altura = altura.replace(',', '.')
         try:
-            return float(altura)
+            valor = float(altura)
+            if valor < 1.0 or valor > 2.5:
+                raise forms.ValidationError("A altura deve estar entre 1.0 e 2.5 metros.")
+            return valor
         except ValueError:
             raise forms.ValidationError("Informe um número válido para a altura (ex: 1,65)")
         
@@ -2070,54 +2185,45 @@ class GestanteForms(forms.ModelForm):
 
         return f"+55{numeros}"
     
-class AvaliacaoForm(forms.ModelForm):
-    class Meta:
-        model = Avaliacao
-        exclude = [
-            'gestante',
-            'resultado_integralidade_saude',
-            'llm_sintese',
-            'data_aplicacao',
-            'status_processamento_llm',
-            'status_processamento_pills',
-            'peso_atual','idade_gestacional', 'consultas_prenatal'
-        ]
+    def clean_peso(self):
+        peso = self.cleaned_data.get('peso')
+        if peso and (peso < 30 or peso > 200):
+            raise forms.ValidationError("O peso deve estar entre 30 e 200 kg.")
+        return peso
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Remove valores iniciais dos campos de marcar
-        for field_name, field in self.fields.items():
-            if isinstance(field, forms.BooleanField) or isinstance(field.widget, forms.RadioSelect):
-                field.initial = None
 
-    
-    def save(self, commit: bool = True, gestante: Gestante | None = None) -> Avaliacao:
-            # 1. Cria a instância (sem salvar no DB)
-            instance = super().save(commit=False)
-
-            if gestante is None and not instance.gestante_id:
-                raise ValueError("A avaliação deve estar associada a uma gestante.")
-
-            if gestante is not None:
-                instance.gestante = gestante
-
-            if commit:
-                # 1️⃣ Salva a avaliação
-                instance.save()
-
-                # 2️⃣ Processa o risco de forma síncrona
-                services.processar_risco_avaliacao(instance.id)
-
-                # 3️⃣ Atualiza o objeto
-                instance.refresh_from_db()
-
-                # 4️⃣ Dispara a geração da síntese LLM em background
-                django_rq.enqueue(gerar_sintese_llm_task, instance.id)
-
-                
-                django_rq.enqueue(gerar_pilulas_task, instance.id)
-
-            return instance
+# DESABILITADO: Classes que usam modelos migrados para microservice
+# 
+# class AvaliacaoForm(forms.ModelForm):
+#     class Meta:
+#         model = Avaliacao
+#         exclude = [
+#             'gestante',
+#             'resultado_integralidade_saude',
+#             'llm_sintese',
+#             'data_aplicacao',
+#             'status_processamento_llm',
+#             'status_processamento_pills',
+#             'peso_atual','idade_gestacional', 'consultas_prenatal'
+#         ]
+#
+#     def __init__(self, *args, **kwargs):
+#         super().__init__(*args, **kwargs)
+#         for field_name, field in self.fields.items():
+#             if isinstance(field, forms.BooleanField) or isinstance(field.widget, forms.RadioSelect):
+#                 field.initial = None
+#
+#     def save(self, commit: bool = True, gestante: Gestante | None = None) -> Avaliacao:
+#         instance = super().save(commit=False)
+#         if gestante is not None:
+#             instance.gestante = gestante
+#         if commit:
+#             instance.save()
+#             services.processar_risco_avaliacao(instance.id)
+#             instance.refresh_from_db()
+#             django_rq.enqueue(gerar_sintese_llm_task, instance.id)
+#             django_rq.enqueue(gerar_pilulas_task, instance.id)
+#         return instance
 
 ========== .\django_app\apps\gestantes\literals.py ==========
 
@@ -2216,420 +2322,38 @@ PILLS_PADRAO = [
 
 ========== .\django_app\apps\gestantes\models.py ==========
 
-from django.db import models
-from django import forms
-
-from datetime import datetime
-
-from django.utils import timezone
-
-#from django.contrib.auth.models import User
-from django.conf import settings
-
-from django.core.exceptions import ValidationError
-
-from django.contrib.postgres.fields import JSONField  # Se estiver usando PostgreSQL
-
-from django.templatetags.static import static
-from datetime import date
-import locale
-
-from datetime import timedelta
-
-import uuid
-import os
-
-import re
-
-class Gestante(models.Model):
-
-    VULNERABILIDADE = [
-        (True, 'Sim'),
-        (False, 'Não'),
-    ]
-
-    nome = models.CharField(max_length=100, verbose_name="Nome Completo")
-    
-    data_nascimento = models.DateField(
-        verbose_name="Data de Nascimento",
-        blank=False,
-        null=False
-    )
-
-    peso = models.PositiveIntegerField(
-        verbose_name="Peso pré-gestacional (kg)",
-        blank=False,
-        null=False
-    )
-    altura = models.FloatField(
-        verbose_name="Altura (m)",
-        blank=False,
-        null=False
-    )
-
-    telefone = models.CharField(
-        max_length=20,
-        verbose_name="Telefone (preferencialmente WhatsApp)",
-        blank=True,
-        help_text="Ex.: (83) 99999-1234"
-    )
-
-    vulnerabilidade_social = models.BooleanField(
-        default=False, 
-        choices=VULNERABILIDADE,
-        blank=True,
-        verbose_name='Com base nas suas visitas domiciliares, você considera essa gestante em condição de vulnerabilidade social?'
-    )
-
-    def foto_upload_path_apagar(instance, filename):
-        return f'fotos/{instance.nome}_{instance.id}/{filename}'
-    
-    def foto_upload_path(instance, filename):
-        base, ext = os.path.splitext(filename)
-        nome = instance.nome.replace(" ", "_") if instance.nome else "gestante"
-        identificador = instance.id or uuid.uuid4().hex[:8]
-        return f"fotos/{nome}_{identificador}/{filename}"
-
-    foto = models.ImageField(upload_to=foto_upload_path, blank=True)
-
-
-    
-    data_cadastro = models.DateTimeField(auto_now_add=True)
-
-    usuario = models.ForeignKey(
-        to=settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=False,
-        related_name='gestantes',
-        verbose_name="Agente responsável"
-    )
-
-    @property
-    def foto_url(self):
-        if self.foto and hasattr(self.foto, 'url'):
-            return self.foto.url
-        return static('assets/imagens/gestante/silhueta.png')
-
-    @property
-    def imc(self):
-        if self.altura > 0:
-            return round(self.peso / (self.altura ** 2), 2)
-        return None
-
-    @property
-    def imc_classificacao(self):
-        imc = self.imc
-        if imc is None:
-            return "Altura ou peso inválidos"
-        if imc < 18.5:
-            return "Baixo peso"
-        elif 18.5 <= imc <= 24.9:
-            return "Adequado"
-        else:
-            return "Excesso de peso"
-    
-    @property
-    def imc_cor(self):
-        """Retorna a cor Bootstrap correspondente à classificação do IMC."""
-        classe = self.imc_classificacao
-
-        if classe == "Baixo peso":
-            return "text-warning"      # amarelo
-        elif classe == "Adequado":
-            return "text-success"      # verde
-        elif classe == "Excesso de peso":
-            return "text-danger"       # vermelho
-        return "text-muted"
-        
-    @property
-    def telefone_whatsapp(self):
-        """
-        Retorna o telefone apenas com dígitos, no padrão exigido pelo wa.me.
-        Exemplo: '+55 (83) 99999-1234' -> '5583999991234'
-        """
-        if not self.telefone:
-            return None
-        return re.sub(r'\D', '', self.telefone)
-    
-    @property
-    def idade(self):
-        today = date.today()
-        return today.year - self.data_nascimento.year - (
-            (today.month, today.day) < (self.data_nascimento.month, self.data_nascimento.day)
-        )
-    
-    @property
-    def consentimento_ativo(self):
-        """Retorna True se o último consentimento foi aceito"""
-        ultimo = self.consentimentos.order_by('-data_registro').first()
-        return ultimo.status == 'aceito' if ultimo else False
-    
-
-    @property
-    def primeiro_nome(self):
-        if not self.nome:
-            return ""
-        return self.nome.strip().split()[0]
-
-    @property
-    def ultimo_nome(self):
-        if not self.nome or len(self.nome.strip().split()) == 1:
-            return ""
-        partes = self.nome.strip().split()
-        return partes[-1] if len(partes) > 1 else partes[0]
-
-    def clean(self):
-        if self.peso < 30 or self.peso > 200:
-            raise ValidationError("O peso deve estar entre 30 e 200 kg.")
-        if self.idade < 10 or self.idade > 60:
-            raise ValidationError("A idade deve estar entre 10 e 60 anos.")
-        if self.altura < 1.0 or self.altura > 2.5:
-            raise ValidationError("A altura deve estar entre 1.0 e 2.5 metros.")
-
-    def __str__(self):
-        return f"{self.nome} (ID: {self.id})"
-
-    class Meta:
-        ordering = ['-data_cadastro']
-        verbose_name = "Gestante"
-        verbose_name_plural = "Gestantes"
-
-
-class ConsentimentoGestante(models.Model):
-    gestante = models.ForeignKey('Gestante', on_delete=models.CASCADE, related_name='consentimentos')
-    usuario = models.ForeignKey(to=settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Registrado por")
-    data_registro = models.DateTimeField(default=timezone.now)
-    
-    STATUS_CONSENTIMENTO = [
-        ('aceito', 'Aceito'),
-        ('revogado', 'Revogado'),
-    ]
-    status = models.CharField(max_length=10, choices=STATUS_CONSENTIMENTO)
-    
-    motivo_revogacao = models.TextField(blank=True, null=True)
-
-    class Meta:
-        ordering = ['-data_registro']
-
-    def __str__(self):
-        return f"{self.gestante.nome} - {self.status} em {self.data_registro.strftime('%d/%m/%Y %H:%M')}"
-
-
-class Avaliacao(models.Model):
-
-    PARTO_CHOICES = [
-        ('Vaginal', 'Vaginal'),
-        ('Cesáreo', 'Cesáreo'),
-    ]
-
-    STATUS_LLM_CHOICES = [
-        ('PENDING', 'Pendente'),
-        ('PROCESSING', 'Processando LLM'),
-        ('COMPLETED', 'LLM Concluído'),
-        ('FAILED', 'LLM Falhou'),
-    ]
-
-
-    gestante = models.ForeignKey(Gestante, on_delete=models.CASCADE, related_name='questionarios')
-    
-    data_aplicacao = models.DateTimeField(verbose_name="Data da Avaliação", default=timezone.now)
-
-
-    peso_atual = models.FloatField(
-        verbose_name="Peso atual:" , null=True
-    )
-
-    idade_gestacional = models.PositiveIntegerField(verbose_name="Idade Gestacional (em semanas)", null=True)
-
-    consultas_prenatal = models.PositiveIntegerField(verbose_name="Quantidade de consultas pré-natal", null=True)
-
-    corrimento_vaginal = models.BooleanField(
-        default=False, 
-        verbose_name='Durante a gestação, você apresentou ou apresenta corrimento vaginal frequente?'
-    )
-
-    periodontite_carie = models.BooleanField(
-        default=False, 
-        verbose_name='Você já teve cárie e/ou periodontite (inflamação na gengiva) diagnosticada nesta gestação?'
-    )
-
-    hipertensao_gestacao = models.BooleanField(
-        default=False, 
-        verbose_name='Você foi diagnosticada com hipertensão (pressão alta) nesta gestação?'
-    )
-
-    diabetes_gestacao = models.BooleanField(
-        default=False, 
-        verbose_name='Você foi diagnosticada com diabetes nesta gestação?'
-    )
-
-    estresse_gestacao = models.BooleanField(
-        default=False,
-        verbose_name='Você passou por algum estresse durante a gestação (violência, sobrecarga de trabalho)?'
-    )
-
-    historico_familiar_alergia = models.BooleanField(
-        default=False,
-        verbose_name='Algum membro da sua família (pai, mãe, irmãos) tem histórico de asma, rinite ou dermatite?'
-    )
-
-    consumo_bebidas_adocadas = models.BooleanField(
-        default=False,
-        verbose_name='Na última semana você consumiu refrigerante e outras bebidas industrializadas adoçadas artificialmente, como suco de caixinha, achocolatados, etc?'
-    )
-
-    consumo_ultraprocessados = models.BooleanField(
-        default=False,
-        verbose_name='Na última semana você consumiu alimentos ultraprocessados (ex.: sorvete, salgadinhos, salsicha, linguiça, presuntos, macarrão instantâneo, biscoitos recheados, etc)?'
-    )
-
-    consumo_alcool = models.BooleanField(
-        default=False,
-        verbose_name='Você consome/consumiu bebidas alcoólicas (cerveja, vinho, vodka, cachaça, etc) nesta gestação?'
-    )
-
-    fumante_gestacao = models.BooleanField(
-        default=False,
-        verbose_name='Você tinha o hábito de fumar ou fumou nesta gestação?'
-    )
-
-
-
-    resultado_integralidade_saude = models.JSONField(null=True, blank=True)
-
-    status_processamento_llm = models.CharField(
-        max_length=20, 
-        choices=STATUS_LLM_CHOICES, 
-        default='PENDING' # Começa como pendente
-    )
-
-    status_processamento_pills = models.CharField(
-        max_length=20, 
-        choices=STATUS_LLM_CHOICES, 
-        default='PENDING' # Começa como pendente
-    )
-
-    
-
-    llm_sintese = models.TextField(
-        null=True, 
-        blank=True, 
-        verbose_name="Síntese gerada pela LLM"
-    )
-    
-
-    @property
-    def ganho_peso(self):
-        """Cálculo do ganho de peso durante a gestação"""
-        if self.gestante and self.gestante.peso and self.peso_atual:
-            return round(self.peso_atual - self.gestante.peso, 2)
-        return None
-
-    @property
-    def top_fatores(self) -> list[str]:
-        """
-        Retorna a lista de top fatores do resultado de integralidade.
-        Exemplo:
-        ["maternalage_p", "family_h", "vagdischarge", "dailyssb_p", "blockupf2"]
-        """
-        if not self.resultado_integralidade_saude:
-            return []
-
-        return self.resultado_integralidade_saude.get("top_fatores", [])
-
-    # --- Exemplo adicional: retornar em string, se quiser exibir direto no admin ---
-    @property
-    def top_fatores_str(self) -> str:
-        """
-        Retorna os top fatores como string separada por vírgula, útil para exibição.
-        """
-        return ", ".join(self.top_fatores)
-
-    class Meta:
-        verbose_name = 'Avaliacao'
-        verbose_name_plural = 'Avaliações'
-        ordering = ['gestante', 'data_aplicacao']  # Ordena por gestante e depois data
-
-    def __str__(self):
-        return f"Questionário de {self.gestante.nome} em {self.data_aplicacao.strftime('%d/%m/%Y')}"
-
-
-locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
-
-from django.db import models
-from django.utils import timezone
-from datetime import timedelta
-
-class Pilula(models.Model):
-    avaliacao = models.ForeignKey(
-        'Avaliacao',
-        on_delete=models.CASCADE,
-        related_name='pilulas'
-    )
-    
-    # Campos principais
-    titulo = models.CharField(max_length=200, verbose_name="Título da Pílula")
-    conteudo = models.TextField(verbose_name="Conteúdo da Pílula", blank=True, null=True)
-    
-    # Controle por semana
-    semana_num = models.PositiveIntegerField(verbose_name="Número da semana", null=True, blank=True)
-
-    # Datas e status
-    data_geracao = models.DateTimeField(auto_now_add=True)
-    data_envio = models.DateTimeField(null=True, blank=True, verbose_name="Data de envio")
-
-    STATUS_CHOICES = [
-        ('aguardando', 'Aguardando'),
-        ('pendente', 'Pendente'),
-        ('enviada', 'Enviada'),
-        ('lida', 'Lida'),
-    ]
-    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pendente')
-
-    class Meta:
-        ordering = ['avaliacao', 'semana_num', 'data_geracao']
-        verbose_name = "Pílula de Conhecimento"
-        verbose_name_plural = "Pílulas de Conhecimento"
-
-    # === Propriedades calculadas ===
-
-    @property
-    def data_inicio_envio(self):
-        """Data a partir da qual a pílula pode ser enviada (base + 7 dias por semana)."""
-        if not self.data_geracao or not self.semana_num:
-            return None
-        return self.data_geracao + timedelta(days=(self.semana_num - 1) * 7)
-
-    @property
-    def periodo_envio(self):
-        """Retorna o intervalo (ex: '1 a 7 de outubro')."""
-        inicio = self.data_inicio_envio
-        if not inicio:
-            return None
-        fim = inicio + timedelta(days=6)
-        # formata datas em estilo natural
-        mes = inicio.strftime("%B").capitalize()
-        return f"{inicio.day} a {fim.day} de {mes}"
-
-    @property
-    def semana_ord(self):
-        """Retorna a forma ordinal (1ª, 2ª, 3ª...)"""
-        if not self.semana_num:
-            return None
-        return f"{self.semana_num}ª"
-
-    # === Métodos utilitários ===
-    def marcar_enviada(self):
-        """Atualiza o status e define a data de envio."""
-        self.status = 'enviada'
-        self.data_envio = timezone.now()
-        self.save()
-
-    def __str__(self):
-        if self.semana_ord:
-            return f"{self.semana_ord} semana - {self.titulo} ({self.status})"
-        return f"{self.titulo} ({self.status})"
+"""
+Modelos de Gestantes - LEGACY
+==============================
+ATENÇÃO: Estes modelos foram migrados para o microservice gestantes-service.
+O Django agora usa autenticação via API e não persiste mais dados localmente.
+
+Os dados são armazenados no microservice gestantes-service.
+Para criar/editar gestantes, use a API do microservice:
+- POST /api/v1/gestantes - criar gestante
+- PUT /api/v1/gestantes/{id} - atualizar gestante
+- GET /api/v1/gestantes - listar gestantes
+
+Consentimentos são gerenciados via:
+- POST /api/v1/consentimentos - criar consentimento
+- GET /api/v1/consentimentos - listar consentimentos
+
+Mantenemos este arquivo apenas para compatibilidade com código legado
+e para superusários administrativos que precisam de acesso ao admin Django.
+"""
+
+# # ==========================
+# # Modelos Legados - DESABILITADOS
+# # ==========================
+# # Todos os modelos abaixo foram movidos para o microservice gestantes-service
+# # e estão comentados para evitar conflitos com a API central.
+# # Para adicionar novos modelos, use o microservice ao invés do Django local.
+# #
+# # Modelos desabilitados:
+# # - Gestante
+# # - ConsentimentoGestante
+# # - Avaliacao
+# # - Pilula
 
 
 ========== .\django_app\apps\gestantes\services.py ==========
@@ -2640,7 +2364,8 @@ from django.utils.text import slugify
 import requests
 import logging
 from django.conf import settings
-from apps.gestantes.models import Avaliacao, Pilula
+# DESABILITADO: Modelos migrados para microservice gestantes-service
+# from apps.gestantes.models import Avaliacao, Pilula
 
 from apps.gestantes.literals import PILLS_PADRAO
 from apps.gestantes.literals import EXPLICACAO_SEM_RISCO
@@ -2698,253 +2423,50 @@ def _processar_resultado_avaliacao(resultado_json):
 
 def obter_dados_risco(ultima_avaliacao, penultima_avaliacao):
     """
-    Processa as avaliações e retorna os dicionários de 
-    riscos e evolução.
+    DESABILITADO: Função que processa avaliações locais.
+    Use a API do microservice gestantes-service ao invés.
     """
-    riscos = {}
-    evolucao_riscos_dict = {}
+    return {}, {}
 
-    if not ultima_avaliacao:
-        return riscos, evolucao_riscos_dict
+# DESABILITADO: Função que depende de modelo local Avaliacao
+# Todas as funções abaixo foram comentadas pois usam o modelo Avaliacao
+# que foi migrado para o microservice gestantes-service.
+# Use a API do microservice ao invés.
 
-    # ------------------------------
-    # Processamento da última avaliação
-    # ------------------------------
-    resultado = _processar_resultado_avaliacao(
-        getattr(ultima_avaliacao, "resultado_integralidade_saude", {})
-    )
+# def chamar_api_de_risco(avaliacao_instance):
+#     """
+#     Monta o payload, envia para a API R e retorna os resultados.
+#     """
+#     pass
 
-    prob_integralidade = round(resultado.get("prob_integralidade", 0))
-    icone_int, classe_int = _classificar_risco(prob_integralidade)
-    
-    fatores_traduzidos = [NOMES_FATORES.get(f, f) for f in resultado.get("top_fatores", [])]
-    
-    riscos["integralidade"] = {
-        "nome": "Integralidade",
-        "valor": prob_integralidade,
-        "fatores": fatores_traduzidos,
-        "icone": icone_int,
-        "classe": classe_int,
-        "slug": "integralidade",
-    }
+# def processar_risco_avaliacao(avaliacao_id):
+#     """
+#     Função "wrapper" que busca a avaliação, chama a API 
+#     e salva o resultado.
+#     """
+#     pass
 
-    outros = []
-    for chave, nome in [
-        ("prob_asma", "Asma"),
-        ("prob_obesidade", "Obesidade"),
-        ("prob_carie", "Cárie"),
-        ("prob_alergia", "Alergia"),
-    ]:
-        valor = round(resultado.get(chave, 0))
-        icone, classe = _classificar_risco(valor)
-        outros.append({
-            "nome": nome, "valor": valor, "icone": icone, 
-            "classe": classe, "slug": slugify(nome),
-        })
-    
-    outros = sorted(outros, key=lambda r: r["valor"], reverse=True)
-    riscos["outros"] = outros
+# def gerar_pilulas(avaliacao):
+#     """
+#     Consulta a API /pills usando os fatores da avaliação
+#     e salva/atualiza as pílulas no banco.
+#     """
+#     pass
 
-    # ------------------------------
-    # Processamento da evolução
-    # ------------------------------
-    if penultima_avaliacao:
-        resultado_ant = _processar_resultado_avaliacao(
-            getattr(penultima_avaliacao, "resultado_integralidade_saude", {})
-        )
-
-        anterior = round(resultado_ant.get("prob_integralidade", 0))
-        atual = prob_integralidade
-        delta = atual - anterior
-
-        if delta > 0:
-            direcao, seta = "📈", "↑"
-        elif delta < 0:
-            direcao, seta = "📉", "↓"
-        else:
-            direcao, seta = "➡️", "="
-
-        evolucao_riscos_dict["integralidade"] = {
-            "nome": "Integralidade", "anterior": anterior, "atual": atual,
-            "delta": delta, "direcao": direcao, "seta": seta,
-            "icone": icone_int, "classe": classe_int, "slug": "integralidade",
-        }
-    
-    return riscos, evolucao_riscos_dict
-
-
-def chamar_api_de_risco(avaliacao_instance):
-    """
-    Monta o payload, envia para a API R e retorna os resultados.
-    """
-    gestante = avaliacao_instance.gestante
-
-    payload = {
-        # Dados da avaliação
-        #'peso_atual': avaliacao_instance.peso_atual or 0,
-        #'idade_gestacional': avaliacao_instance.idade_gestacional or 0,
-        #'consultas_prenatal': avaliacao_instance.consultas_prenatal or 0,
-        'corrimento_vaginal': avaliacao_instance.corrimento_vaginal or False,
-        'periodontite_carie': avaliacao_instance.periodontite_carie or False,
-        'hipertensao_gestacao': avaliacao_instance.hipertensao_gestacao or False,
-        'diabetes_gestacao': avaliacao_instance.diabetes_gestacao or False,
-        'estresse_gestacao': avaliacao_instance.estresse_gestacao or False,
-        'historico_familiar_alergia': avaliacao_instance.historico_familiar_alergia or False,
-        'consumo_bebidas_adocadas': avaliacao_instance.consumo_bebidas_adocadas or False,
-        'consumo_ultraprocessados': avaliacao_instance.consumo_ultraprocessados or False,
-        'consumo_alcool': avaliacao_instance.consumo_alcool or False,
-        'fumante_gestacao': avaliacao_instance.fumante_gestacao or False,
-
-        # Dados derivados da gestante
-        'imc_pre_gestacional': gestante.imc if gestante else 0,
-        'idade_gestante': gestante.idade if gestante else 0,
-        #'vulnerabilidade_social': gestante.vulnerabilidade_social if gestante else False,
-    }
-
-    # Pega a URL do settings.py
-    api_url = settings.R_API_URL
-    #api_url = 'http://r_api:8000/predict'
-
-    try:
-        logger.info(f"📤 Enviando payload para API R (Avaliação ID: {avaliacao_instance.id}):\n{json.dumps(payload, indent=2)}")
-        response = requests.post(api_url, json=payload, timeout=20)
-        response.raise_for_status()
-        logger.info(f"✅ API R respondeu para Avaliação ID: {avaliacao_instance.id}")
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        logger.error(f"❌ ERRO AO CHAMAR A API R (Avaliação ID: {avaliacao_instance.id}): {e}")
-        return {}
-
-def processar_risco_avaliacao(avaliacao_id):
-    """
-    Função "wrapper" que busca a avaliação, chama a API 
-    e salva o resultado.
-    """
-    try:
-        avaliacao = Avaliacao.objects.get(id=avaliacao_id)
-        
-        # Chama a função de API
-        resultados_api = chamar_api_de_risco(avaliacao)
-        
-        # Salva o resultado
-        if resultados_api:
-            avaliacao.resultado_integralidade_saude = resultados_api
-            avaliacao.save(update_fields=['resultado_integralidade_saude'])
-            logger.info(f"💾 Resultado da API salvo para Avaliação ID: {avaliacao.id}")
-
-    except Avaliacao.DoesNotExist:
-        logger.error(f"Tentativa de processar risco para Avaliação ID {avaliacao_id} que não existe.")
-    except Exception as e:
-        logger.error(f"Erro inesperado ao processar risco para Avaliação ID {avaliacao_id}: {e}")
-
-def gerar_pilulas(avaliacao: Avaliacao):
-    """
-    Consulta a API /pills usando os fatores da avaliação
-    e salva/atualiza as pílulas no banco.
-    """
-
-    week_pills = []
-    top_fatores = avaliacao.top_fatores or []
-
-    # Se não tiver fatores, nada a fazer
-    if not top_fatores:
-        week_pills = random.sample(PILLS_PADRAO, 4)
-        #logging.info("Avaliação sem fatores negativos — nenhuma pílula gerada.")
-    else:
-        # ------------------------------
-        # 1. Chama API /pills
-        # ------------------------------
-        base_url = getattr(settings, "MARIA_API_URL", "http://maria_api:8000")
-        url = f"{base_url}/pills"
-
-        payload = {"factors": top_fatores}
-
-        try:
-            response = requests.post(url, json=payload, timeout=600)
-            logging.info(f"Resposta API /pills: {response.json()}")
-            response.raise_for_status()
-            data = response.json()
-
-        except requests.RequestException as e:
-            raise RuntimeError(f"Erro ao chamar API /pills: {e}")
-
-        week_pills = data.get("week_pills", [])
-
-    # ------------------------------
-    # 2. Salva pílulas no banco
-    # ------------------------------
-    for i, item in enumerate(week_pills, start=1):
-
-        fator = item.get("fator")
-        conteudo = item.get("pill")
-
-        # nome amigável, se existir no dict
-        titulo_traduzido = NOMES_FATORES.get(fator, fator)
-
-        pilula, created = Pilula.objects.update_or_create(
-            avaliacao=avaliacao,
-            semana_num=i,
-            titulo=titulo_traduzido,
-            defaults={"conteudo": conteudo},
-        )
-
-        logging.info(f"Pílula {'criada' if created else 'atualizada'}: {pilula}")
-
-    
-def gerar_sintese_llm(avaliacao: Avaliacao):
-    """
-    Se não houver fatores negativos, retorna explicação e pílulas padrão,
-    sem chamar a API 'maria_api'.
-    Se houver fatores, envia para API e retorna o conteúdo gerado.
-    """
-
-    top_fatores = avaliacao.top_fatores or []
-    #print ("quantos fatores", top_fatores, not top_fatores)
-
-    # -------------------------------------------
-    # 🟣 CASO NÃO EXISTAM FATORES → NÃO CHAMA API
-    # -------------------------------------------
-    if top_fatores == []:
-
-        return {
-            "sintese": EXPLICACAO_SEM_RISCO,
-            "fontes": [],
-            "factors": [],
-        }
-
-    # -------------------------------------------
-    # 🟣 SE EXISTIREM FATORES → CHAMA A API MARIA
-    # -------------------------------------------
-    base_url = getattr(settings, "MARIA_API_URL", "http://maria_api:8000")
-    url = f"{base_url}/explanation"
-
-    payload = {"factors": top_fatores}
-
-    try:
-        response = requests.post(url, json=payload, timeout=600)
-        logging.error(response.json())
-        response.raise_for_status()
-        data = response.json()
-    except requests.RequestException as e:
-        raise RuntimeError(f"Erro ao chamar API maria_api: {e}")
-    
-    explicacao = data.get("explanation", {})
-    explicacao = re.sub(r"\([^)]*\)", "", explicacao)
-
-    fontes = data.get("sources", [])
-    factors = data.get("factors", [])
-
-    return {
-        "sintese": explicacao,
-        "fontes": fontes,
-        "factors": factors,
-    }
+# def gerar_sintese_llm(avaliacao):
+#     """
+#     Se não houver fatores negativos, retorna explicação e pílulas padrão,
+#     sem chamar a API 'maria_api'.
+#     Se houver fatores, envia para API e retorna o conteúdo gerado.
+#     """
+#     pass
 
 ========== .\django_app\apps\gestantes\tasks.py ==========
 
 from django_rq import job
 from apps.gestantes import services
-from apps.gestantes.models import Avaliacao, Pilula
+# DESABILITADO: Modelos migrados para microservice gestantes-service
+# from apps.gestantes.models import Avaliacao, Pilula
 
 import logging
 
@@ -3091,13 +2613,14 @@ urlpatterns = [
 
 import csv
 from django.core.management.base import BaseCommand
-from apps.gestantes.models import Avaliacao, Pilula
+# DESABILITADO: Modelos migrados para microservice gestantes-service
+# from apps.gestantes.models import Avaliacao, Pilula
 
 class Command(BaseCommand):
-    help = 'Exports Avaliacao and Pilula data to CSV files'
+    help = 'Exports Avaliacao and Pilula data to CSV files (DESABILITADO - use microservice API)'
 
     def handle(self, *args, **options):
-        self.stdout.write(self.style.SUCCESS('Starting export...'))
+        self.stdout.write(self.style.WARNING('Este comando foi desabilitado. Use a API do microservice gestantes-service ao invés.'))
 
         # Export Avaliacoes
         with open('avaliacoes.csv', 'w', newline='', encoding='utf-8') as csvfile:
@@ -3170,132 +2693,6 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS('Successfully exported Pilulas to pilulas.csv'))
 
 
-========== .\django_app\apps\gestantes\migrations\0001_initial.py ==========
-
-# Generated by Django 5.1.2 on 2025-11-28 15:54
-
-import apps.gestantes.models
-import django.db.models.deletion
-import django.utils.timezone
-from django.conf import settings
-from django.db import migrations, models
-
-
-class Migration(migrations.Migration):
-
-    initial = True
-
-    dependencies = [
-        migrations.swappable_dependency(settings.AUTH_USER_MODEL),
-    ]
-
-    operations = [
-        migrations.CreateModel(
-            name='Gestante',
-            fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('nome', models.CharField(max_length=100, verbose_name='Nome Completo')),
-                ('data_nascimento', models.DateField(verbose_name='Data de Nascimento')),
-                ('peso', models.PositiveIntegerField(verbose_name='Peso pré-gestacional (kg)')),
-                ('altura', models.FloatField(verbose_name='Altura (m)')),
-                ('telefone', models.CharField(blank=True, help_text='Ex.: (83) 99999-1234', max_length=20, verbose_name='Telefone (preferencialmente WhatsApp)')),
-                ('vulnerabilidade_social', models.BooleanField(blank=True, choices=[(True, 'Sim'), (False, 'Não')], default=False, verbose_name='Com base nas suas visitas domiciliares, você considera essa gestante em condição de vulnerabilidade social?')),
-                ('foto', models.ImageField(blank=True, upload_to=apps.gestantes.models.Gestante.foto_upload_path)),
-                ('data_cadastro', models.DateTimeField(auto_now_add=True)),
-                ('usuario', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='gestantes', to=settings.AUTH_USER_MODEL, verbose_name='Agente responsável')),
-            ],
-            options={
-                'verbose_name': 'Gestante',
-                'verbose_name_plural': 'Gestantes',
-                'ordering': ['-data_cadastro'],
-            },
-        ),
-        migrations.CreateModel(
-            name='ConsentimentoGestante',
-            fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('data_registro', models.DateTimeField(default=django.utils.timezone.now)),
-                ('status', models.CharField(choices=[('aceito', 'Aceito'), ('revogado', 'Revogado')], max_length=10)),
-                ('motivo_revogacao', models.TextField(blank=True, null=True)),
-                ('usuario', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to=settings.AUTH_USER_MODEL, verbose_name='Registrado por')),
-                ('gestante', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='consentimentos', to='gestantes.gestante')),
-            ],
-            options={
-                'ordering': ['-data_registro'],
-            },
-        ),
-        migrations.CreateModel(
-            name='Avaliacao',
-            fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('data_aplicacao', models.DateTimeField(default=django.utils.timezone.now, verbose_name='Data da Avaliação')),
-                ('peso_atual', models.FloatField(null=True, verbose_name='Peso atual:')),
-                ('idade_gestacional', models.PositiveIntegerField(null=True, verbose_name='Idade Gestacional (em semanas)')),
-                ('consultas_prenatal', models.PositiveIntegerField(null=True, verbose_name='Quantidade de consultas pré-natal')),
-                ('corrimento_vaginal', models.BooleanField(default=False, verbose_name='Durante a gestação, você apresentou ou apresenta corrimento vaginal frequente?')),
-                ('periodontite_carie', models.BooleanField(default=False, verbose_name='Você já teve cárie e/ou periodontite (inflamação na gengiva) diagnosticada nesta gestação?')),
-                ('hipertensao_gestacao', models.BooleanField(default=False, verbose_name='Você foi diagnosticada com hipertensão (pressão alta) nesta gestação?')),
-                ('diabetes_gestacao', models.BooleanField(default=False, verbose_name='Você foi diagnosticada com diabetes nesta gestação?')),
-                ('estresse_gestacao', models.BooleanField(default=False, verbose_name='Você passou por algum estresse durante a gestação (violência, sobrecarga de trabalho)?')),
-                ('historico_familiar_alergia', models.BooleanField(default=False, verbose_name='Algum membro da sua família (pai, mãe, irmãos) tem histórico de asma, rinite ou dermatite?')),
-                ('consumo_bebidas_adocadas', models.BooleanField(default=False, verbose_name='Na última semana você consumiu refrigerante e outras bebidas industrializadas adoçadas artificialmente, como suco de caixinha, achocolatados, etc?')),
-                ('consumo_ultraprocessados', models.BooleanField(default=False, verbose_name='Na última semana você consumiu alimentos ultraprocessados (ex.: sorvete, salgadinhos, salsicha, linguiça, presuntos, macarrão instantâneo, biscoitos recheados, etc)?')),
-                ('consumo_alcool', models.BooleanField(default=False, verbose_name='Você consome/consumiu bebidas alcoólicas (cerveja, vinho, vodka, cachaça, etc) nesta gestação?')),
-                ('fumante_gestacao', models.BooleanField(default=False, verbose_name='Você tinha o hábito de fumar ou fumou nesta gestação?')),
-                ('resultado_integralidade_saude', models.JSONField(blank=True, null=True)),
-                ('status_processamento_llm', models.CharField(choices=[('PENDING', 'Pendente'), ('PROCESSING', 'Processando LLM'), ('COMPLETED', 'LLM Concluído'), ('FAILED', 'LLM Falhou')], default='PENDING', max_length=20)),
-                ('llm_sintese', models.TextField(blank=True, null=True, verbose_name='Síntese gerada pela LLM')),
-                ('gestante', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='questionarios', to='gestantes.gestante')),
-            ],
-            options={
-                'verbose_name': 'Avaliacao',
-                'verbose_name_plural': 'Avaliações',
-                'ordering': ['gestante', 'data_aplicacao'],
-            },
-        ),
-        migrations.CreateModel(
-            name='Pilula',
-            fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('titulo', models.CharField(max_length=200, verbose_name='Título da Pílula')),
-                ('conteudo', models.TextField(blank=True, null=True, verbose_name='Conteúdo da Pílula')),
-                ('semana_num', models.PositiveIntegerField(blank=True, null=True, verbose_name='Número da semana')),
-                ('data_geracao', models.DateTimeField(auto_now_add=True)),
-                ('data_envio', models.DateTimeField(blank=True, null=True, verbose_name='Data de envio')),
-                ('status', models.CharField(choices=[('aguardando', 'Aguardando'), ('pendente', 'Pendente'), ('enviada', 'Enviada'), ('lida', 'Lida')], default='pendente', max_length=10)),
-                ('avaliacao', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='pilulas', to='gestantes.avaliacao')),
-            ],
-            options={
-                'verbose_name': 'Pílula de Conhecimento',
-                'verbose_name_plural': 'Pílulas de Conhecimento',
-                'ordering': ['avaliacao', 'semana_num', 'data_geracao'],
-            },
-        ),
-    ]
-
-
-========== .\django_app\apps\gestantes\migrations\0002_avaliacao_status_processamento_pills.py ==========
-
-# Generated by Django 5.1.2 on 2025-11-30 13:20
-
-from django.db import migrations, models
-
-
-class Migration(migrations.Migration):
-
-    dependencies = [
-        ('gestantes', '0001_initial'),
-    ]
-
-    operations = [
-        migrations.AddField(
-            model_name='avaliacao',
-            name='status_processamento_pills',
-            field=models.CharField(choices=[('PENDING', 'Pendente'), ('PROCESSING', 'Processando LLM'), ('COMPLETED', 'LLM Concluído'), ('FAILED', 'LLM Falhou')], default='PENDING', max_length=20),
-        ),
-    ]
-
-
 ========== .\django_app\apps\gestantes\migrations\__init__.py ==========
 
 
@@ -3356,49 +2753,76 @@ def add_attrs(field, args):
 ========== .\django_app\apps\gestantes\views\avaliacao_views.py ==========
 
 # ======================================
-# Importações principais do Django
+# Importacoes principais do Django
 # ======================================
-from django.shortcuts import render, get_object_or_404, redirect
+from django import forms
+from django.shortcuts import render, redirect
 from django.contrib import messages
 from django.urls import reverse
-from django.contrib.auth.decorators import login_required
+from apps.usuarios.decorator import login_required_message
 
 # ======================================
-# Importações de apps locais
+# Importacoes de apps locais
 # ======================================
-from apps.gestantes.models import Gestante, Avaliacao
-from apps.gestantes.forms import AvaliacaoForm
-from apps.gestantes import services # Importa a camada de serviço
+from apps.gestantes import services
 from django.http import JsonResponse
 
 from apps.gestantes.services import predicao_api_esta_online
-
 from apps.gestantes.services import gerar_token
+from apps.gestantes.views.gestante_views import _get_gestante_fhir
+from microservices.clients import avaliacoes_client
+
+
+class AvaliacaoForm(forms.Form):
+    corrimento_vaginal = forms.BooleanField(required=False, label="Corrimento vaginal frequente?")
+    periodontite_carie = forms.BooleanField(required=False, label="Carie e/ou periodontite?")
+    hipertensao_gestacao = forms.BooleanField(required=False, label="Hipertensao na gestacao?")
+    diabetes_gestacao = forms.BooleanField(required=False, label="Diabetes na gestacao?")
+    estresse_gestacao = forms.BooleanField(required=False, label="Estresse durante gestacao?")
+    historico_familiar_alergia = forms.BooleanField(required=False, label="Historico familiar de alergia?")
+    consumo_bebidas_adocadas = forms.BooleanField(required=False, label="Consumo de bebidas adocadas?")
+    consumo_ultraprocessados = forms.BooleanField(required=False, label="Consumo de ultraprocessados?")
+    consumo_alcool = forms.BooleanField(required=False, label="Consumo de alcool?")
+    fumante_gestacao = forms.BooleanField(required=False, label="Fumante?")
+
+
+def _listar_avaliacoes(gestante_id):
+    avaliacoes = avaliacoes_client.list_avaliacoes(params={"gestante": gestante_id})
+    return sorted(
+        avaliacoes,
+        key=lambda avaliacao: avaliacao.get("data_aplicacao") or "",
+        reverse=True,
+    )
+
 
 # =========================================================
-# Função: Detalhes da Gestante
-# Mostra informações e evolução de riscos
+# Funcao: Detalhes da Gestante
+# Mostra informacoes e evolucao de riscos
 # =========================================================
-@login_required
+@login_required_message
 def gestante(request, gestante_id):
     if not request.user.is_authenticated:
-        messages.error(request, 'Usuário não logado')
+        messages.error(request, 'Usuario nao logado')
         return redirect('login')
 
-    gestante = get_object_or_404(Gestante, pk=gestante_id)
-    avaliacoes = Avaliacao.objects.filter(gestante=gestante).order_by('-data_aplicacao')[:2]
+    gestante = _get_gestante_fhir(gestante_id)
+    if not gestante:
+        messages.error(request, "Gestante nao encontrada.")
+        return redirect('index')
+
+    avaliacoes = _listar_avaliacoes(gestante_id)[:2]
 
     ultima_avaliacao = avaliacoes[0] if len(avaliacoes) > 0 else None
     penultima_avaliacao = avaliacoes[1] if len(avaliacoes) > 1 else None
 
-    # Chama a camada de serviço para fazer o trabalho sujo
+    # Chama a camada de servico para fazer o trabalho sujo
     riscos, evolucao_riscos_dict = services.obter_dados_risco(
-        ultima_avaliacao, 
+        ultima_avaliacao,
         penultima_avaliacao
     )
 
-    nome_usuario = request.user.profile.primeiro_nome 
-    
+    nome_usuario = request.user.profile.primeiro_nome
+
     token = gerar_token(nome_usuario)
 
     context = {
@@ -3414,64 +2838,64 @@ def gestante(request, gestante_id):
 
 
 # =========================================================
-# Função: Avaliação
-# Cria nova avaliação associada à gestante
+# Funcao: Avaliacao
+# Cria nova avaliacao associada a gestante
 # =========================================================
-@login_required
+@login_required_message
 def avaliacao(request, gestante_id):
-    gestante = get_object_or_404(Gestante, id=gestante_id)
-
-    if not gestante.consentimento_ativo:
-        messages.error(request, "Não é possível avaliar uma gestante com consentimento revogado.")
+    gestante = _get_gestante_fhir(gestante_id)
+    if not gestante:
+        messages.error(request, "Gestante nao encontrada.")
         return redirect('index')
 
-    # 🚨 Checa API antes de mostrar o formulário
+    if not gestante.get('consentimento_ativo', True):
+        messages.error(request, "Nao e possivel avaliar uma gestante com consentimento revogado.")
+        return redirect('index')
+
+    # Checa API antes de mostrar o formulario
     if not predicao_api_esta_online():
-        messages.error(request, "O serviço de predição está indisponível no momento. Tente mais tarde")
+        messages.error(request, "O servico de predicao esta indisponivel no momento. Tente mais tarde")
         return redirect('gestante', gestante_id)
-    
+
     if request.method == 'POST':
         form = AvaliacaoForm(request.POST)
         if form.is_valid():
-            questionario = form.save(gestante=gestante)
-            messages.success(request, "Avaliação registrada com sucesso.")
-            return redirect(reverse('gestante', args=[gestante_id]))
+            payload = {"gestante": gestante_id, **form.cleaned_data}
+            questionario = avaliacoes_client.create_avaliacao(payload)
+            if questionario:
+                messages.success(request, "Avaliacao registrada com sucesso.")
+                return redirect(reverse('gestante', args=[gestante_id]))
+            messages.error(request, "Erro ao registrar avaliacao no avaliacoes-service.")
     else:
         form = AvaliacaoForm()
 
     return render(request, 'gestantes/avaliacao/questionario.html', {'form': form, 'gestante': gestante})
 
-@login_required
-def avaliacao_status(request, gestante_id):
-    tipo = request.GET.get("tipo", "sintese")  # llm como padrão
 
-    ultima_avaliacao = (
-        Avaliacao.objects
-        .filter(gestante_id=gestante_id)
-        .order_by('-data_aplicacao')
-        .first()
-    )
+@login_required_message
+def avaliacao_status(request, gestante_id):
+    tipo = request.GET.get("tipo", "sintese")
+
+    ultima_avaliacao = next(iter(_listar_avaliacoes(gestante_id)), None)
 
     if not ultima_avaliacao:
-        return JsonResponse({"status": "NONE", "status_text": "Sem avaliações"})
+        return JsonResponse({"status": "NONE", "status_text": "Sem avaliacoes"})
 
-    # Mapeia o atributo correto
     atributo_status = {
         "sintese": "status_processamento_llm",
         "pilulas": "status_processamento_pills",
     }.get(tipo)
 
-    # Em caso de tipo inválido:
     if atributo_status is None:
         return JsonResponse({"status": "INVALID", "status_text": "Tipo desconhecido"})
 
-    status = getattr(ultima_avaliacao, atributo_status)
+    status = ultima_avaliacao.get(atributo_status)
 
     status_texts = {
-        "PENDING": "Em breve, a MarIA irá preparar tudo para você.",
-        "PROCESSING": "A MarIA está processando as informações da gestante.",
-        "COMPLETED": "A MarIA já analisou os resultados!",
-        "FAILED": "A MarIA teve uma dificuldade ao processar a avaliação. Tente novamente daqui a pouco."
+        "PENDING": "Em breve, a MarIA ira preparar tudo para voce.",
+        "PROCESSING": "A MarIA esta processando as informacoes da gestante.",
+        "COMPLETED": "A MarIA ja analisou os resultados!",
+        "FAILED": "A MarIA teve uma dificuldade ao processar a avaliacao. Tente novamente daqui a pouco."
     }
 
     return JsonResponse({
@@ -3480,11 +2904,9 @@ def avaliacao_status(request, gestante_id):
     })
 
 
-
-
-
 def api_predicao_status(request):
     return JsonResponse({"online": predicao_api_esta_online()})
+
 
 ========== .\django_app\apps\gestantes\views\comunicacao_views.py ==========
 
@@ -3492,7 +2914,6 @@ def api_predicao_status(request):
 # Importações principais do Django
 # ======================================
 from django.shortcuts import render, get_object_or_404, redirect
-from django.contrib.auth.decorators import login_required
 from django.utils import timezone
 
 import hmac
@@ -3502,7 +2923,9 @@ from django.conf import settings
 # ======================================
 # Importações de apps locais
 # ======================================
-from apps.gestantes.models import Gestante, Avaliacao, Pilula
+# DESABILITADO: Modelos migrados para microservice gestantes-service
+# from apps.gestantes.models import Gestante, Avaliacao, Pilula
+from apps.usuarios.decorator import login_required_message
 
 from apps.gestantes.literals import NOMES_FATORES
 from apps.gestantes.services import gerar_token
@@ -3522,6 +2945,7 @@ def resumo_riscos_api(request, gestante_id):
 # Função: Comunica
 # Mostra pílulas de comunicação
 # =========================================================
+@login_required_message
 def comunica(request, gestante_id):
     # Busca a gestante
     gestante = get_object_or_404(Gestante, pk=gestante_id)
@@ -3551,6 +2975,7 @@ def comunica(request, gestante_id):
     })
 
 
+@login_required_message
 def pilulas(request, gestante_id):
     # Busca a gestante
     gestante = get_object_or_404(Gestante, pk=gestante_id)
@@ -3591,7 +3016,7 @@ def pilulas(request, gestante_id):
 # =========================================================
 from django.http import JsonResponse
 
-@login_required
+@login_required_message
 def atualizar_status_pilula(request, pilula_id):
     pilula = get_object_or_404(Pilula, pk=pilula_id)
 
@@ -3617,7 +3042,6 @@ def atualizar_status_pilula(request, pilula_id):
 # Importações principais do Django
 # ======================================
 from django.shortcuts import render, redirect
-from django.contrib.auth.decorators import login_required
 
 # ======================================
 # Importações de apps locais
@@ -3644,38 +3068,189 @@ def chat(request):
     return render(request, 'gestantes/core/chat.html')
 
 
-
 ========== .\django_app\apps\gestantes\views\gestante_views.py ==========
 
 # ======================================
 # Importações principais do Django
 # ======================================
-from django.shortcuts import render, get_object_or_404, redirect
+from datetime import date
+
+from django.shortcuts import render, redirect
 from django.contrib import messages
-from django.contrib.auth.decorators import login_required
 
 # ======================================
 # Importações de apps locais
 # ======================================
-from apps.gestantes.models import Gestante, ConsentimentoGestante
 from apps.gestantes.forms import GestanteForms
 from apps.usuarios.decorator import login_required_message
 
+# ======================================
+# Importações de microserviços
+# ======================================
+from microservices.clients import gestantes_client
+
+EXT_PESO = "https://integrai.ufma.br/fhir/StructureDefinition/gestante-peso-pre"
+EXT_ALTURA = "https://integrai.ufma.br/fhir/StructureDefinition/gestante-altura"
+EXT_VULNERABILIDADE = "https://integrai.ufma.br/fhir/StructureDefinition/gestante-vulnerabilidade-social"
+EXT_USUARIO_ID = "https://integrai.ufma.br/fhir/StructureDefinition/gestante-usuario-id"
+
+
+def _fhir_extension(patient, url, value_key):
+    for extension in patient.get("extension", []) or []:
+        if extension.get("url") == url:
+            return extension.get(value_key)
+    return None
+
+
+def _calcular_idade(data_nascimento):
+    if not data_nascimento:
+        return None
+    if isinstance(data_nascimento, str):
+        data_nascimento = date.fromisoformat(data_nascimento)
+    hoje = date.today()
+    return hoje.year - data_nascimento.year - (
+        (hoje.month, hoje.day) < (data_nascimento.month, data_nascimento.day)
+    )
+
+
+def _classificar_imc(imc):
+    if imc is None:
+        return "Altura ou peso invalidos"
+    if imc < 18.5:
+        return "Baixo peso"
+    if imc <= 24.9:
+        return "Adequado"
+    return "Excesso de peso"
+
+
+def _consentimento_ativo(gestante_id):
+    consentimentos = gestantes_client.list_consentimentos(params={"gestante_id": gestante_id, "limit": 1})
+    if not consentimentos:
+        return True
+    return consentimentos[0].get("status") == "aceito"
+
+
+def _patient_to_gestante(patient):
+    nome = ""
+    names = patient.get("name") or []
+    if names:
+        nome = names[0].get("text") or " ".join(names[0].get("given") or [])
+        if names[0].get("family") and names[0].get("family") not in nome:
+            nome = f"{nome} {names[0].get('family')}".strip()
+
+    telefone = None
+    for item in patient.get("telecom", []) or []:
+        if item.get("system") == "phone":
+            telefone = item.get("value")
+            break
+
+    peso = _fhir_extension(patient, EXT_PESO, "valueInteger")
+    altura = _fhir_extension(patient, EXT_ALTURA, "valueDecimal")
+    vulnerabilidade_social = _fhir_extension(patient, EXT_VULNERABILIDADE, "valueBoolean")
+    usuario_id = _fhir_extension(patient, EXT_USUARIO_ID, "valueInteger")
+    data_nascimento = patient.get("birthDate")
+
+    imc = round(float(peso) / (float(altura) ** 2), 2) if peso and altura else None
+    gestante_id = int(patient["id"])
+
+    return {
+        "id": gestante_id,
+        "nome": nome,
+        "data_nascimento": data_nascimento,
+        "peso": peso,
+        "altura": altura,
+        "telefone": telefone,
+        "vulnerabilidade_social": bool(vulnerabilidade_social),
+        "usuario_id": usuario_id,
+        "foto": None,
+        "idade": _calcular_idade(data_nascimento),
+        "imc": imc,
+        "imc_classificacao": _classificar_imc(imc),
+        "telefone_whatsapp": telefone,
+        "consentimento_ativo": _consentimento_ativo(gestante_id),
+    }
+
+
+def _gestante_form_to_fhir_patient(cleaned_data, usuario_id=None):
+    extensions = [
+        {"url": EXT_PESO, "valueInteger": cleaned_data["peso"]},
+        {"url": EXT_ALTURA, "valueDecimal": cleaned_data["altura"]},
+        {"url": EXT_VULNERABILIDADE, "valueBoolean": cleaned_data.get("vulnerabilidade_social", False)},
+    ]
+    if usuario_id is not None:
+        extensions.append({"url": EXT_USUARIO_ID, "valueInteger": usuario_id})
+
+    patient = {
+        "resourceType": "Patient",
+        "active": True,
+        "gender": "female",
+        "name": [{"use": "official", "text": cleaned_data["nome"]}],
+        "birthDate": cleaned_data["data_nascimento"].isoformat(),
+        "extension": extensions,
+    }
+    if cleaned_data.get("telefone"):
+        patient["telecom"] = [{"system": "phone", "value": cleaned_data["telefone"], "use": "mobile"}]
+    return patient
+
+
+def _list_gestantes_fhir(usuario_id, nome=None):
+    params = {"_count": 200}
+    if nome:
+        params["name"] = nome
+
+    bundle = gestantes_client._request("GET", "/fhir/Patient", params=params)
+    entries = (bundle or {}).get("entry", [])
+    gestantes = [_patient_to_gestante(entry["resource"]) for entry in entries if entry.get("resource")]
+    return [gestante for gestante in gestantes if gestante.get("usuario_id") == usuario_id]
+
+
+def _get_gestante_fhir(gestante_id):
+    patient = gestantes_client._request("GET", f"/fhir/Patient/{gestante_id}")
+    if not patient or patient.get("resourceType") == "OperationOutcome":
+        return None
+    return _patient_to_gestante(patient)
+
+
+def _create_gestante_fhir(cleaned_data, usuario_id):
+    patient = _gestante_form_to_fhir_patient(cleaned_data, usuario_id=usuario_id)
+    created = gestantes_client._request("POST", "/fhir/Patient", data=patient)
+    if not created or created.get("resourceType") == "OperationOutcome":
+        return None
+    return _patient_to_gestante(created)
+
+
+def _update_gestante_fhir(gestante_id, cleaned_data, usuario_id):
+    patient = _gestante_form_to_fhir_patient(cleaned_data, usuario_id=usuario_id)
+    updated = gestantes_client._request("PUT", f"/fhir/Patient/{gestante_id}", data=patient)
+    if not updated or updated.get("resourceType") == "OperationOutcome":
+        return None
+    return _patient_to_gestante(updated)
+
+
+def _delete_gestante_fhir(gestante_id):
+    response = gestantes_client.session.delete(f"{gestantes_client.base_url}/fhir/Patient/{gestante_id}")
+    return response.status_code == 204
 
 # =========================================================
 # Função: Revogar Consentimento
 # Cria um registro de consentimento com status "revogado"
 # =========================================================
-@login_required
+@login_required_message
 def revogar_consentimento(request, gestante_id):
-    gestante = get_object_or_404(Gestante, id=gestante_id)
+    # Verificar se gestante existe via FHIR Patient
+    gestante = _get_gestante_fhir(gestante_id)
+    if not gestante:
+        messages.error(request, "Gestante não encontrada.")
+        return redirect('index')
 
     if request.method == 'POST':
-        ConsentimentoGestante.objects.create(
-            gestante=gestante,
-            usuario=request.user,
-            status='revogado'
-        )
+        # Criar consentimento revogado via microserviço
+        consentimento_data = {
+            'gestante_id': gestante_id,
+            'usuario_id': request.user.id,
+            'status': 'revogado'
+        }
+        gestantes_client.create_consentimento(consentimento_data)
     return redirect('index')  # Redireciona para a página principal
 
 
@@ -3685,23 +3260,17 @@ def revogar_consentimento(request, gestante_id):
 # =========================================================
 def index(request):
     if not request.user.is_authenticated:
-        #messages.error(request, 'Usuário não logado')
         return redirect('home')
 
-    gestantes_user = Gestante.objects.filter(usuario=request.user).order_by("-data_cadastro")
-
-    # Exibe apenas gestantes com consentimento ativo
-    gestantes = [g for g in gestantes_user if g.consentimento_ativo]
-
     show_welcome = request.session.pop('show_welcome', False)
-    profile = getattr(request.user, 'profile', None)
+    # Usar FHIR Patient para listar gestantes
+    gestantes = _list_gestantes_fhir(request.user.id)
+    # Nao filtrar por consentimento ativo - mostrar todas as gestantes com status correto
 
     return render(request, 'gestantes/crud/painel.html', {
         "cards": gestantes,
         "show_welcome": show_welcome,
-        "profile": profile
     })
-
 
 # =========================================================
 # Função: Buscar Gestantes
@@ -3709,13 +3278,8 @@ def index(request):
 # =========================================================
 @login_required_message
 def buscar(request):
-    gestantes = Gestante.objects.filter(usuario=request.user).order_by("data_cadastro")
-
-    if "buscar" in request.GET:
-        nome_a_buscar = request.GET['buscar']
-        if nome_a_buscar:
-            # Corrigi sua regex para permitir busca por partes do nome
-            gestantes = gestantes.filter(nome__icontains=nome_a_buscar) 
+    # Usar FHIR Patient para listar gestantes
+    gestantes = _list_gestantes_fhir(request.user.id, nome=request.GET.get('buscar') or None)
 
     return render(request, 'gestantes/crud/painel.html', {"cards": gestantes})
 
@@ -3738,18 +3302,20 @@ def nova_gestante(request):
             return render(request, 'gestantes/crud/acolher.html', {'form': form, 'consentimento_erro': True})
 
         if form.is_valid():
-            gestante = form.save(commit=False)
-            gestante.usuario = request.user
-            gestante.save()
+            gestante = _create_gestante_fhir(form.cleaned_data, request.user.id)
+            if gestante:
+                # Criar consentimento via microserviço
+                consentimento_data = {
+                    'gestante_id': gestante['id'],
+                    'usuario_id': request.user.id,
+                    'status': 'aceito'
+                }
+                gestantes_client.create_consentimento(consentimento_data)
 
-            ConsentimentoGestante.objects.create(
-                gestante=gestante,
-                usuario=request.user,
-                status='aceito'
-            )
-
-            messages.success(request, 'Nova gestante cadastrada!')
-            return redirect('questionario', gestante_id=gestante.id)
+                messages.success(request, 'Nova gestante cadastrada!')
+                return redirect('index')
+            else:
+                messages.error(request, 'Erro ao cadastrar gestante.')
 
     return render(request, 'gestantes/crud/acolher.html', {'form': form})
 
@@ -3760,20 +3326,27 @@ def nova_gestante(request):
 # =========================================================
 @login_required_message
 def editar_gestante(request, gestante_id):
-    gestante = get_object_or_404(Gestante, id=gestante_id) # Você já busca a gestante aqui
+    # Usar FHIR Patient para buscar gestante
+    gestante = _get_gestante_fhir(gestante_id)
+    if not gestante:
+        messages.error(request, "Gestante não encontrada.")
+        return redirect('index')
 
-    if not gestante.consentimento_ativo:
+    if not gestante.get('consentimento_ativo', True):
         messages.error(request, "Não é possível editar uma gestante com consentimento revogado.")
         return redirect('index')
 
-    form = GestanteForms(instance=gestante)
+    form = GestanteForms(initial=gestante)
 
     if request.method == 'POST':
-        form = GestanteForms(request.POST, request.FILES, instance=gestante)
+        form = GestanteForms(request.POST, request.FILES)
         if form.is_valid():
-            form.save()
-            messages.success(request, 'Gestante editada com sucesso')
-            return redirect('index')
+            updated = _update_gestante_fhir(gestante_id, form.cleaned_data, request.user.id)
+            if updated:
+                messages.success(request, 'Gestante editada com sucesso')
+                return redirect('index')
+            else:
+                messages.error(request, 'Erro ao editar gestante.')
 
     # MUDANÇA AQUI: Passe o objeto 'gestante' completo para o template
     context = {
@@ -3790,10 +3363,14 @@ def editar_gestante(request, gestante_id):
 # =========================================================
 @login_required_message
 def deletar_gestante(request, gestante_id):
-    gestante = get_object_or_404(Gestante, id=gestante_id) # Use get_object_or_404
-    gestante.delete()
-    messages.success(request, 'Deleção feita com sucesso!')
+    # Usar FHIR Patient para deletar
+    deleted = _delete_gestante_fhir(gestante_id)
+    if deleted:
+        messages.success(request, 'Deleção feita com sucesso!')
+    else:
+        messages.error(request, 'Erro ao deletar gestante.')
     return redirect('index')
+
 
 ========== .\django_app\apps\usuarios\__init__.py ==========
 
@@ -3866,334 +3443,228 @@ class UsuariosConfig(AppConfig):
 
 ========== .\django_app\apps\usuarios\backends.py ==========
 
-"""
-Backend de autenticação que se conecta ao microservice users-service.
-Não persiste dados no banco local - usa cache Django.
-"""
-import os
+import hashlib
 import requests
 from django.contrib.auth.backends import BaseBackend
-from django.core.cache import cache
 
-
-# ==================== Cache Keys ====================
-CACHE_KEY_USER = 'microservice_user_{}'
-CACHE_KEY_PROFILE = 'microservice_profile_{}'
-CACHE_KEY_TOKEN = 'microservice_token_{}'
+from apps.usuarios.services import get_cached_user_with_username, login_user
 
 
 class MicroserviceUser:
-    """
-    Classe proxy que representa o usuário logado.
-    Compatível com o sistema de sessão do Django 5.1.
-    """
-    
-    # Simula atributos do modelo Django
-    _meta = None
-    DoesNotExist = None
-    
+    class _meta:
+        class PkField:
+            def value_to_string(self, obj):
+                return str(obj.pk)
+
+        pk = PkField()
+        model_name = 'microserviceuser'
+        app_label = 'usuarios'
+
     def __init__(self, username, user_data, profile_data=None, token=None):
         self.username = username
         self._user_data = user_data or {}
-        self._profile_data = profile_data
+        self._profile_data = profile_data or self._user_data.get('profile')
         self._token = token
-        self._is_authenticated = True
-        self._state = None
-        
-        # pk e id como atributos diretos — sem @property
-        pk_value = self._user_data.get('id')
-        if pk_value is None:
-            import hashlib
-            pk_value = int(hashlib.md5(username.encode()).hexdigest()[:8], 16)
-        
-        self.pk = pk_value
-        self.id = pk_value
-    
-    # ---------- Propriedades obrigatórias para o Django ----------
-           
-    @property
-    def email(self):
-        return self._user_data.get('email') or f"{self.username}@integrai.ufma.br"
-    
-    @property
-    def first_name(self):
-        nome = self._user_data.get('nome', '')
-        return nome.split()[0] if nome else ''
-    
-    @property
-    def last_name(self):
-        nome = self._user_data.get('nome', '')
-        return ' '.join(nome.split()[1:]) if nome else ''
-    
-    @property
-    def is_active(self):
-        return self._user_data.get('is_active', True)
-    
-    @property
-    def is_staff(self):
-        return self._user_data.get('is_staff', False)
-    
-    @property
-    def is_superuser(self):
-        return self._user_data.get('is_superuser', False)
-    
+        self.pk = username
+        self.id = self._user_data.get('id')
+        self.password = None
+
     @property
     def is_authenticated(self):
-        return self._is_authenticated
-    
+        return True
+
     @property
     def is_anonymous(self):
         return False
-    
+
+    @property
+    def email(self):
+        return self._user_data.get('email') or f'{self.username}@integrai.ufma.br'
+
+    @property
+    def first_name(self):
+        nome = self._profile_data.get('nome', '') if self._profile_data else ''
+        return nome.split()[0] if nome else ''
+
+    @property
+    def last_name(self):
+        nome = self._profile_data.get('nome', '') if self._profile_data else ''
+        return ' '.join(nome.split()[1:]) if nome else ''
+
+    @property
+    def is_active(self):
+        return self._user_data.get('is_active', True)
+
+    @property
+    def is_staff(self):
+        return self._user_data.get('is_staff', False)
+
+    @property
+    def is_superuser(self):
+        return self._user_data.get('is_superuser', False)
+
     @property
     def token(self):
         return self._token
-    
+
     @property
     def profile(self):
         if self._profile_data:
             return MicroserviceProfile(self._profile_data)
         return None
-    
-    # ---------- Métodos obrigatórios para o Django ----------
-    
+
     def __str__(self):
         return self.username
-    
+
     def __eq__(self, other):
         if isinstance(other, MicroserviceUser):
             return self.username == other.username
         return False
-    
+
     def __hash__(self):
         return hash(self.username)
-    
+
     def get_username(self):
         return self.username
-    
+
     def get_full_name(self):
-        return self._user_data.get('nome', self.username)
-    
+        if self.profile and self.profile.nome:
+            return self.profile.nome
+        return self.username
+
     def get_short_name(self):
         return self.first_name
-    
+
     def has_perm(self, perm, obj=None):
         if self.is_superuser:
             return True
         return perm in self._user_data.get('permissions', [])
-    
+
     def has_perms(self, perm_list, obj=None):
-        return all(self.has_perm(p, obj) for p in perm_list)
-    
+        return all(self.has_perm(perm, obj) for perm in perm_list)
+
     def has_module_perms(self, app_label):
         if self.is_superuser:
             return True
         return self.is_active and self.is_staff
-    
+
     def get_session_auth_hash(self):
-        import hashlib
         return hashlib.sha256(
-            (self.username + (self._token or '')).encode()
+            (self.username + (self._token or 'default_salt')).encode()
         ).hexdigest()
-    
+
     def get_group_permissions(self, obj=None):
         return set()
-    
+
     def get_all_permissions(self, obj=None):
         return set(self._user_data.get('permissions', []))
-    
+
     def natural_key(self):
         return (self.username,)
-    
+
     def delete(self):
         pass
-    
+
     def save(self, *args, **kwargs):
         pass
 
 
 class MicroserviceProfile:
-    """
-    Classe proxy para o perfil do agente.
-    """
-    
     def __init__(self, profile_data):
         self._data = profile_data or {}
-    
+
     @property
     def nome(self):
         return self._data.get('nome', '')
-    
+
     @property
     def area(self):
         return self._data.get('area')
-    
+
     @property
     def ubs(self):
         return self._data.get('ubs')
-    
+
     @property
     def foto(self):
         return self._data.get('foto')
-    
+
     @property
     def primeiro_nome(self):
-        nome = self._data.get('nome', '')
+        nome = self.nome
         return nome.split()[0] if nome else ''
-    
-    @property 
+
+    @property
     def UBS(self):
-        """Alias para compatibilidade com templates existentes"""
-        return self._data.get('ubs')
-    
+        return self.ubs
+
     @property
     def foto_url(self):
-        """Retorna URL da foto se disponível"""
-        foto = self._data.get('foto')
-        if foto:
-            return foto
-        return None
+        return self.foto or None
 
 
 class MicroserviceBackend(BaseBackend):
-    """
-    Backend de autenticação que consulta o microservice users-service.
-    Usa cache Django para armazenar dados do usuário.
-    """
-    
-    def __init__(self):
-        self.users_service_url = os.getenv(
-            'USERS_SERVICE_URL', 
-            'http://users-service:8000'
-        )
-        self.session = requests.Session()
-        self.session.headers.update({'Content-Type': 'application/json'})
-    
     def authenticate(self, request, username=None, password=None, **kwargs):
-        """
-        Autentica o usuário através do microservice.
-        """
         if not username or not password:
             return None
-            
-        # Limpar CPF (remover pontos e traços)
-        username = ''.join(filter(str.isdigit, str(username)))
-        
+
         try:
-            # Chamar o endpoint de login do microservice
-            response = self.session.post(
-                f'{self.users_service_url}/api/v1/auth/token',
-                data={
-                    'username': username,
-                    'password': password
-                },
-                headers={'Content-Type': 'application/x-www-form-urlencoded'},
-            )
-            
-            if response.status_code == 200:
-                token_data = response.json()
-                access_token = token_data.get('access_token')
-                
-                # Usar dados do usuário retornados pelo login (evita segunda chamada)
-                user_data = token_data.get('user')
-                
-                if access_token:
-                    self.session.headers.update({
-                        'Authorization': f'Bearer {access_token}'
-                    })
-
-                    # Buscar dados do usuário pelo username
-                    user_response = self.session.get(
-                        f'{self.users_service_url}/api/v1/usuarios/username/{username}'
-                    )
-
-                    if user_response.status_code != 200:
-                        return None
-
-                    user_data = user_response.json()
-
-                    # Buscar perfil — opcional, não bloqueia o login
-                    profile_data = None
-                    try:
-                        profile_response = self.session.get(
-                            f'{self.users_service_url}/api/v1/usuarios/profile/me'
-                        )
-                        if profile_response.status_code == 200:
-                            profile_data = profile_response.json()
-                    except Exception:
-                        pass
-
-                    cache.set(CACHE_KEY_USER.format(username), user_data, 86400)
-                    cache.set(CACHE_KEY_PROFILE.format(username), profile_data, 86400)
-                    cache.set(CACHE_KEY_TOKEN.format(username), access_token, 86400)
-
-                    return MicroserviceUser(
-                        username=username,
-                        user_data=user_data,
-                        profile_data=profile_data,
-                        token=access_token
-                    )
-            
+            auth_data = login_user(username, password)
+        except requests.exceptions.RequestException as exc:
+            print(f'Erro ao conectar com users-service: {exc}')
             return None
-            
-        except requests.exceptions.RequestException as e:
-            print(f"Erro ao conectar com users-service: {e}")
+
+        if not auth_data:
             return None
-    
+
+        return MicroserviceUser(
+            username=auth_data['username'],
+            user_data=auth_data['user_data'],
+            profile_data=auth_data['profile_data'],
+            token=auth_data['token'],
+        )
+
     def get_user(self, user_id):
-        """
-        Recupera o usuário pelo cache.
-        """
-        # Buscar dados do cache
-        user_data = cache.get(CACHE_KEY_USER.format(user_id))
-        profile_data = cache.get(CACHE_KEY_PROFILE.format(user_id))
-        token = cache.get(CACHE_KEY_TOKEN.format(user_id))
-        
-        if user_data:
-            return MicroserviceUser(
-                username=user_id,
-                user_data=user_data,
-                profile_data=profile_data,
-                token=token
-            )
-        
-        # Se não encontrou no cache, retorna None
-        return None
-    
+        cache_data = get_cached_user_with_username(user_id)
+        user_data = cache_data.get('user_data')
+
+        if not user_data:
+            return None
+
+        return MicroserviceUser(
+            username=cache_data.get('username'),
+            user_data=user_data,
+            profile_data=cache_data.get('profile_data'),
+            token=cache_data.get('token'),
+        )
+
     def has_perm(self, user_obj, perm, obj=None):
-        """
-        Verifica permissões do usuário.
-        """
         if not user_obj.is_active:
             return False
-        
-        # Verificar se o usuário tem o perfil de agente
-        if hasattr(user_obj, 'profile') and user_obj.profile:
+        if user_obj.profile:
             return True
-        
-        # Se é staff ou superuser, tem permissões
-        if user_obj.is_staff or user_obj.is_superuser:
-            return True
-        
-        return False
+        return user_obj.is_staff or user_obj.is_superuser
+
 
 ========== .\django_app\apps\usuarios\decorator.py ==========
 
-from django.contrib.auth.decorators import user_passes_test
-from django.contrib import messages
+from functools import wraps
 
-def login_required_message(function=None, redirect_field_name='next', login_url='login/'):
-    actual_decorator = user_passes_test(
-        lambda u: u.is_authenticated,
-        login_url=login_url,
-        redirect_field_name=redirect_field_name
-    )
+from django.contrib import messages
+from django.shortcuts import redirect
+
+
+def login_required_message(function=None, redirect_field_name='next', login_url='login'):
     def decorator(view_func):
+        @wraps(view_func)
         def _wrapped_view(request, *args, **kwargs):
             if not request.user.is_authenticated:
-                messages.warning(request, 'Você precisa estar logado para acessar esta página.')
-            return actual_decorator(view_func)(request, *args, **kwargs)
+                messages.warning(request, 'Voce precisa estar logado para acessar esta pagina.')
+                return redirect(login_url)
+            return view_func(request, *args, **kwargs)
+
         return _wrapped_view
+
     if function:
         return decorator(function)
     return decorator
@@ -4667,6 +4138,56 @@ class PerfilUpdateProfileForm(forms.Form):
 #         fields = ["nome", "area", "UBS", "foto"]
 
 
+========== .\django_app\apps\usuarios\middleware.py ==========
+
+from django.contrib.auth.models import AnonymousUser
+from django.utils.functional import SimpleLazyObject
+
+from apps.usuarios.backends import MicroserviceUser
+from apps.usuarios.services import get_cached_microservice_data, refresh_cached_user
+
+
+def get_microservice_user(request):
+    username = request.session.get('microservice_user_id')
+    if not username:
+        return AnonymousUser()
+
+    cache_data = get_cached_microservice_data(username)
+    user_data = cache_data.get('user_data')
+    profile_data = cache_data.get('profile_data')
+    token = cache_data.get('token') or request.session.get('microservice_token')
+
+    if not user_data:
+        refreshed_data = refresh_cached_user(username, token)
+        if refreshed_data:
+            user_data, profile_data = refreshed_data
+
+    if not user_data:
+        return AnonymousUser()
+
+    return MicroserviceUser(
+        username=str(username),
+        user_data=user_data,
+        profile_data=profile_data,
+        token=token,
+    )
+
+
+class MicroserviceUserMiddleware:
+    """
+    Keeps request.user compatible with Django for users authenticated by
+    the users-service. Must run after AuthenticationMiddleware.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if request.session.get('microservice_authenticated'):
+            request.user = SimpleLazyObject(lambda: get_microservice_user(request))
+        return self.get_response(request)
+
+
 ========== .\django_app\apps\usuarios\models.py ==========
 
 """
@@ -4799,6 +4320,222 @@ A autenticação é realizada via API REST pelo MicroserviceBackend.
 #         return self.nome or self.user.username
 
 
+========== .\django_app\apps\usuarios\services.py ==========
+
+import os
+
+import requests
+from django.core.cache import cache
+
+
+CACHE_TIMEOUT = 86400
+CACHE_KEY_USER = 'microservice_user_{}'
+CACHE_KEY_PROFILE = 'microservice_profile_{}'
+CACHE_KEY_TOKEN = 'microservice_token_{}'
+USERS_SERVICE_URL = os.getenv('USERS_SERVICE_URL', 'http://users-service:8000')
+
+
+def normalize_username(username):
+    return ''.join(filter(str.isdigit, str(username or '')))
+
+
+def auth_headers(token):
+    return {
+        'Authorization': f'Bearer {token}',
+        'Content-Type': 'application/json',
+    }
+
+
+def cache_microservice_user(username, user_data, profile_data=None, token=None):
+    cache.set(CACHE_KEY_USER.format(username), user_data, CACHE_TIMEOUT)
+    cache.set(CACHE_KEY_PROFILE.format(username), profile_data, CACHE_TIMEOUT)
+    if token:
+        cache.set(CACHE_KEY_TOKEN.format(username), token, CACHE_TIMEOUT)
+
+
+def get_cached_microservice_data(username):
+    if not username:
+        return {}
+
+    user_data = cache.get(CACHE_KEY_USER.format(username))
+    profile_data = cache.get(CACHE_KEY_PROFILE.format(username))
+    token = cache.get(CACHE_KEY_TOKEN.format(username))
+
+    if not profile_data and user_data:
+        profile_data = user_data.get('profile')
+
+    return {
+        'username': username,
+        'user_data': user_data,
+        'profile_data': profile_data,
+        'token': token,
+    }
+
+
+def get_cached_user_with_username(username):
+    username = str(username)
+    cache_data = get_cached_microservice_data(username)
+
+    if not cache_data.get('user_data') and username.isdigit():
+        padded_username = username.zfill(11)
+        padded_cache_data = get_cached_microservice_data(padded_username)
+        if padded_cache_data.get('user_data'):
+            padded_cache_data['username'] = padded_username
+            return padded_cache_data
+
+    return cache_data
+
+
+def login_user(username, password):
+    username = normalize_username(username)
+    if not username or not password:
+        return None
+
+    session = requests.Session()
+    token_response = session.post(
+        f'{USERS_SERVICE_URL}/api/v1/auth/token',
+        data={'username': username, 'password': password},
+        headers={'Content-Type': 'application/x-www-form-urlencoded'},
+    )
+
+    if token_response.status_code != 200:
+        return None
+
+    token_data = token_response.json()
+    token = token_data.get('access_token')
+    if not token:
+        return None
+
+    user_data, profile_data = fetch_user_bundle(username, token)
+    if not user_data:
+        return None
+
+    cache_microservice_user(username, user_data, profile_data, token)
+
+    return {
+        'username': username,
+        'user_data': user_data,
+        'profile_data': profile_data,
+        'token': token,
+    }
+
+
+def fetch_user_bundle(username, token):
+    headers = auth_headers(token)
+
+    user_response = requests.get(
+        f'{USERS_SERVICE_URL}/api/v1/usuarios/username/{username}',
+        headers=headers,
+        timeout=5,
+    )
+    if user_response.status_code != 200:
+        return None, None
+
+    user_data = user_response.json()
+    profile_data = None
+
+    profile_response = requests.get(
+        f'{USERS_SERVICE_URL}/api/v1/usuarios/profile/me',
+        headers=headers,
+        timeout=5,
+    )
+    if profile_response.status_code == 200:
+        profile_data = profile_response.json()
+
+    return user_data, profile_data
+
+
+def refresh_cached_user(username, token):
+    if not username or not token:
+        return None
+
+    try:
+        user_data, profile_data = fetch_user_bundle(username, token)
+    except requests.exceptions.RequestException:
+        return None
+
+    if not user_data:
+        return None
+
+    cache_microservice_user(username, user_data, profile_data, token)
+    return user_data, profile_data
+
+
+def update_user(user_id, token, user_data):
+    if not token or not user_id:
+        return False, None
+
+    try:
+        response = requests.put(
+            f'{USERS_SERVICE_URL}/api/v1/usuarios/{user_id}',
+            json=user_data,
+            headers=auth_headers(token),
+        )
+    except requests.exceptions.RequestException:
+        return False, None
+
+    if response.status_code == 200:
+        return True, response.json()
+
+    return False, None
+
+
+def save_profile(token, user_id, profile_data):
+    if not token or not user_id:
+        return False, None
+
+    headers = auth_headers(token)
+
+    try:
+        response = requests.put(
+            f'{USERS_SERVICE_URL}/api/v1/usuarios/profile/me',
+            json=profile_data,
+            headers=headers,
+        )
+
+        if response.status_code == 200:
+            return True, response.json()
+
+        if response.status_code == 404:
+            create_response = requests.post(
+                f'{USERS_SERVICE_URL}/api/v1/usuarios/profile',
+                json={**profile_data, 'user_id': user_id},
+                headers=headers,
+            )
+            if create_response.status_code in (200, 201):
+                return True, create_response.json()
+    except requests.exceptions.RequestException:
+        return False, None
+
+    return False, None
+
+
+def create_user_with_profile(user_data, profile_data):
+    try:
+        response = requests.post(
+            f'{USERS_SERVICE_URL}/api/v1/usuarios',
+            json=user_data,
+            headers={'Content-Type': 'application/json'},
+        )
+
+        if response.status_code not in (200, 201):
+            return False, response.json().get('detail', 'Erro ao criar usuario')
+
+        created_user = response.json()
+        token_data = login_user(user_data['username'], user_data['password'])
+
+        if profile_data and token_data:
+            save_profile(
+                token=token_data['token'],
+                user_id=created_user.get('id'),
+                profile_data=profile_data,
+            )
+
+        return True, created_user
+    except requests.exceptions.RequestException as exc:
+        return False, str(exc)
+
+
 ========== .\django_app\apps\usuarios\tests.py ==========
 
 from django.test import TestCase
@@ -4822,365 +4559,155 @@ urlpatterns = [
 
 ========== .\django_app\apps\usuarios\views.py ==========
 
-from django.shortcuts import render, redirect
-from django.contrib.auth import get_user_model
 from django.contrib import auth, messages
-from django.contrib.auth.decorators import login_required
-from django.core.cache import cache
-import requests
-import os
+from django.contrib.auth import login as auth_login
+from django.shortcuts import redirect, render
 
-from apps.usuarios.forms import LoginForms, CadastroForms
-from .forms import PerfilUpdateUserForm, PerfilUpdateProfileForm
-
-from functools import wraps
-from django.shortcuts import redirect
-
-def microservice_login_required(view_func):
-    @wraps(view_func)
-    def wrapper(request, *args, **kwargs):
-        if not request.session.get('microservice_authenticated'):
-            return redirect('login')
-        return view_func(request, *args, **kwargs)
-    return wrapper
-
-# User = get_user_model()
-
-# URL do microservice
-USERS_SERVICE_URL = os.getenv('USERS_SERVICE_URL', 'http://users-service:8000')
-
-# Cache keys (mesmo do backends.py)
-CACHE_KEY_USER = 'microservice_user_{}'
-CACHE_KEY_PROFILE = 'microservice_profile_{}'
-CACHE_KEY_TOKEN = 'microservice_token_{}'
+from apps.usuarios.decorator import login_required_message
+from apps.usuarios.forms import (
+    CadastroForms,
+    LoginForms,
+    PerfilUpdateProfileForm,
+    PerfilUpdateUserForm,
+)
+from apps.usuarios.services import (
+    cache_microservice_user,
+    create_user_with_profile,
+    save_profile,
+    update_user,
+)
 
 
-def _get_microservice_cache_data(username):
-    """
-    Recupera dados do usuário do cache Django.
-    """
-    if not username:
-        return {}
-    
-    user_data = cache.get(CACHE_KEY_USER.format(username))
-    profile_data = cache.get(CACHE_KEY_PROFILE.format(username))
-    token = cache.get(CACHE_KEY_TOKEN.format(username))
-    
-    return {
-        'user_data': user_data,
-        'profile_data': profile_data,
-        'token': token,
-    }
-
-
-def _get_user_from_cache(request):
-    """
-    Recupera o usuário do cache baseado na sessão.
-    """
-    username = request.session.get('microservice_user_id')
-    if not username:
-        return None
-    
-    cache_data = _get_microservice_cache_data(username)
-    user_data = cache_data.get('user_data')
-    profile_data = cache_data.get('profile_data')
-    token = cache_data.get('token')
-    
-    if not user_data:
-        return None
-    
-    # Criar objeto usuário simulado
-    class SessionUser:
-        def __init__(self, data, profile, token):
-            self.username = data.get('username', '')
-            self.email = data.get('email', '')
-            self.first_name = data.get('nome', '').split()[0] if data.get('nome') else ''
-            self.last_name = ' '.join(data.get('nome', '').split()[1:]) if data.get('nome') else ''
-            self.is_active = data.get('is_active', True)
-            self._profile = profile
-            self._token = token
-        
-        @property
-        def profile(self):
-            if self._profile:
-                class SessionProfile:
-                    def __init__(self, p):
-                        self.nome = p.get('nome', '')
-                        self.area = p.get('area')
-                        self.ubs = p.get('ubs')
-                        self.foto = p.get('foto')
-                        self.primeiro_nome = p.get('nome', '').split()[0] if p.get('nome') else ''
-                return SessionProfile(self._profile)
-            return None
-    
-    return SessionUser(user_data, profile_data, token)
-
-
-def _update_profile_in_microservice(request, profile_data):
-    """
-    Atualiza o perfil do agente no microservice via API.
-    """
-    username = request.session.get('microservice_user_id')
-    cache_data = _get_microservice_cache_data(username)
-    token = cache_data.get('token')
-    
-    if not token:
-        return False
-    
-    try:
-        response = requests.put(
-            f'{USERS_SERVICE_URL}/api/v1/usuarios/profile/me',
-            json=profile_data,
-            headers={
-                'Authorization': f'Bearer {token}',
-                'Content-Type': 'application/json'
-            }
-        )
-        return response.status_code == 200
-    except Exception as e:
-        print(f"Erro ao atualizar perfil no microservice: {e}")
-        return False
-
-
-@microservice_login_required
+@login_required_message
 def meu_perfil(request):
-    """
-    Exibe o perfil do usuário logado.
-    Os dados são obtidos do cache Django.
-    """
-    session_user = _get_user_from_cache(request)
-    
-    if not session_user:
-        messages.error(request, "Sessão expirada. Faça login novamente.")
-        return redirect('login')
-    
-    return render(request, "usuarios/meu_perfil.html", {
-        "user": session_user,
-        "profile": session_user.profile,
+    return render(request, 'usuarios/meu_perfil.html', {
+        'user': request.user,
+        'profile': request.user.profile,
     })
 
 
-@microservice_login_required
+@login_required_message
 def editar_perfil(request):
-    """
-    Edita o perfil do usuário logado.
-    Os dados são sincronizados com o microservice.
-    """
-    username = request.session.get('microservice_user_id')
-    session_data = _get_microservice_cache_data(username)
-    user_data = session_data.get('user_data', {})
-    profile_data = session_data.get('profile_data', {})
-    
-    if request.method == "POST":
-        # Atualizar dados do usuário
-        user_form_data = {
-            'email': request.POST.get('email'),
-        }
-        
-        # Atualizar perfil no microservice
-        profile_form_data = {
-            'nome': request.POST.get('nome'),
-            'area': request.POST.get('area'),
-            'ubs': request.POST.get('ubs'),
-        }
-        
-        # Chamar API do microservice
-        success = _update_profile_in_microservice(request, profile_form_data)
-        
-        if success:
-            # Atualizar sessão local
-            request.session['microservice_user_data'].update(user_form_data)
-            if profile_data:
-                request.session['microservice_profile_data'].update(profile_form_data)
-            
-            messages.success(request, "Perfil atualizado com sucesso!")
-        else:
-            messages.error(request, "Erro ao atualizar perfil no microservice.")
-        
-        return redirect("editar_perfil")
-    
-    # Preparar dados para o formulário
-    class SessionUser:
-        def __init__(self, data, profile):
-            self.username = data.get('username', '')
-            self.email = data.get('email', '')
-            self.first_name = data.get('nome', '').split()[0] if data.get('nome') else ''
-            self.last_name = ' '.join(data.get('nome', '').split()[1:]) if data.get('nome') else ''
-            self.is_active = data.get('is_active', True)
-            self._profile = profile
-        
-        @property
-        def profile(self):
-            if self._profile:
-                class SessionProfile:
-                    def __init__(self, p):
-                        self.nome = p.get('nome', '')
-                        self.area = p.get('area')
-                        self.ubs = p.get('ubs')
-                        self.foto = p.get('foto')
-                return SessionProfile(self._profile)
-            return None
-    
-    session_user = SessionUser(user_data, profile_data)
-    
-    # Criar forms vazios para compatibilidade (os dados são preenchidos no template)
-    form_user = PerfilUpdateUserForm(instance=session_user)
-    form_profile = PerfilUpdateProfileForm(instance=session_user.profile if session_user.profile else None)
+    profile = request.user.profile
 
-    return render(request, "usuarios/editar_perfil.html", {
-        "form_user": form_user,
-        "form_profile": form_profile,
+    if request.method == 'POST':
+        form_user = PerfilUpdateUserForm(request.POST)
+        form_profile = PerfilUpdateProfileForm(request.POST, request.FILES)
+
+        if form_user.is_valid() and form_profile.is_valid():
+            token = request.user.token or request.session.get('microservice_token')
+            username = request.session.get('microservice_user_id')
+
+            user_success, updated_user_data = update_user(
+                user_id=request.user.id,
+                token=token,
+                user_data={'email': form_user.cleaned_data['email']},
+            )
+            profile_success, updated_profile_data = save_profile(
+                token=token,
+                user_id=request.user.id,
+                profile_data={
+                    'nome': form_profile.cleaned_data['nome'],
+                    'area': form_profile.cleaned_data.get('area'),
+                    'ubs': form_profile.cleaned_data.get('ubs'),
+                },
+            )
+
+            if user_success and profile_success:
+                updated_user_data['profile'] = updated_profile_data
+                cache_microservice_user(
+                    username=username,
+                    user_data=updated_user_data,
+                    profile_data=updated_profile_data,
+                    token=token,
+                )
+                messages.success(request, 'Perfil atualizado com sucesso!')
+                return redirect('editar_perfil')
+
+            messages.error(request, 'Erro ao atualizar perfil no microservice.')
+    else:
+        form_user = PerfilUpdateUserForm(initial={
+            'email': request.user.email,
+        })
+        form_profile = PerfilUpdateProfileForm(initial={
+            'nome': profile.nome if profile else '',
+            'area': profile.area if profile else '',
+            'ubs': profile.ubs if profile else '',
+        })
+
+    return render(request, 'usuarios/editar_perfil.html', {
+        'form_user': form_user,
+        'form_profile': form_profile,
     })
-#antigo forma de login
-# def login(request):
-#     form = LoginForms() # Cria um formulário vazio
 
-#     if request.method == 'POST':
-#         form = LoginForms(request.POST) # Preenche com dados
-
-#         if form.is_valid(): # O form.clean() JÁ autenticou o usuário
-            
-#             # 1. Pegamos o usuário que o próprio formulário autenticou
-#             usuario = form.get_user() 
-            
-#             # 2. Fazemos o login
-#             auth.login(request, usuario)
-
-#                 # Limpa todas as mensagens antigas que sobraram na sessão
-#             storage = messages.get_messages(request)
-#             storage.used = True
-
-#             messages.success(request, f'{usuario.username} logado com sucesso!')
-#             request.session['show_welcome'] = True
-#             return redirect('index')
-        
-#         # 3. Se o form for inválido (senha errada, campos em branco),
-#         # o 'return render' abaixo mostrará os erros automaticamente.
-#         # Você não precisa de um 'else' aqui.
-
-#     return render(request, 'usuarios/login.html', {'form': form})
 
 def login(request):
     form = LoginForms()
 
     if request.method == 'POST':
         form = LoginForms(request.POST)
-
         if form.is_valid():
             usuario = form.get_user()
 
-            # Em vez de auth.login() — que exige _meta do Django ORM
-            # salvamos manualmente na sessão
+            cache_microservice_user(
+                username=usuario.username,
+                user_data=usuario._user_data,
+                profile_data=usuario._profile_data,
+                token=usuario.token,
+            )
+
+            auth_login(request, usuario)
             request.session['microservice_user_id'] = usuario.username
+            request.session['microservice_token'] = usuario.token
             request.session['microservice_authenticated'] = True
-            request.session.cycle_key()  # segurança — regenera session key
-
-            storage = messages.get_messages(request)
-            storage.used = True
-
-            messages.success(request, f'{usuario.username} logado com sucesso!')
             request.session['show_welcome'] = True
+            request.session.save()
+
+            messages.success(request, 'Login realizado com sucesso!')
             return redirect('index')
 
     return render(request, 'usuarios/login.html', {'form': form})
 
-def _create_user_in_microservice(user_data, profile_data):
-    try:
-        # 1. Criar usuário
-        response = requests.post(
-            f'{USERS_SERVICE_URL}/api/v1/usuarios',
-            json=user_data,
-            headers={'Content-Type': 'application/json'}
-        )
-        
-        if response.status_code not in (200, 201):
-            return False, response.json().get('detail', 'Erro ao criar usuário')
-        
-        usuario_criado = response.json()
-        
-        # 2. Fazer login para obter token
-        token_response = requests.post(
-            f'{USERS_SERVICE_URL}/api/v1/auth/token',
-            data={
-                'username': user_data['username'],
-                'password': user_data['password']
-            },
-            headers={'Content-Type': 'application/x-www-form-urlencoded'}
-        )
-        
-        if token_response.status_code != 200:
-            # Usuário criado mas sem perfil — ainda é sucesso parcial
-            return True, usuario_criado
-        
-        token = token_response.json().get('access_token')
-        
-        # 3. Criar perfil com o token
-        if profile_data and token:
-            requests.post(
-                f'{USERS_SERVICE_URL}/api/v1/usuarios/profile',
-                json=profile_data,
-                headers={
-                    'Authorization': f'Bearer {token}',
-                    'Content-Type': 'application/json'
-                }
-            )
-        
-        return True, usuario_criado
-        
-    except Exception as e:
-        return False, str(e)
-
 
 def cadastro(request):
-    """
-    Cadastra novo usuário via microservice.
-    """
     form = CadastroForms()
 
     if request.method == 'POST':
         form = CadastroForms(request.POST, request.FILES)
-
         if form.is_valid():
-            # Preparar dados para o microservice
             username = ''.join(filter(str.isdigit, str(form.cleaned_data['nome_cadastro'])))
-            
             user_data = {
                 'username': username,
                 'email': form.cleaned_data['email'],
                 'password': form.cleaned_data['senha_1'],
             }
-            
             profile_data = {
                 'nome': form.cleaned_data['nome_completo'],
                 'area': form.cleaned_data.get('area'),
                 'ubs': form.cleaned_data.get('ubs'),
             }
-            
-            # Criar no microservice
-            success, result = _create_user_in_microservice(user_data, profile_data)
-            
-            if success:
-                messages.success(request, 'Cadastro efetuado com sucesso! Faça login.')
-                return redirect('login')
-            else:
-                messages.error(request, f'Erro ao cadastrar: {result}')
 
-    # Se o método for GET ou o form for inválido,
-    # renderiza a página com o formulário (e seus erros, se houver).
+            success, result = create_user_with_profile(user_data, profile_data)
+
+            if success:
+                messages.success(request, 'Cadastro efetuado com sucesso! Faca login.')
+                return redirect('login')
+
+            messages.error(request, f'Erro ao cadastrar: {result}')
+
     return render(request, 'usuarios/cadastro.html', {'form': form})
 
 
 def logout(request):
-    # Limpar dados da sessão do microservice
     request.session.pop('microservice_user_id', None)
     request.session.pop('microservice_token', None)
-    request.session.pop('microservice_user_data', None)
-    request.session.pop('microservice_profile_data', None)
+    request.session.pop('microservice_authenticated', None)
     request.session.pop('show_welcome', None)
-    
+
     auth.logout(request)
-    messages.success(request, "Logout efetuado com sucesso!")
+    messages.success(request, 'Logout efetuado com sucesso!')
     return redirect('login')
+
 
 ========== .\django_app\apps\usuarios\migrations\__init__.py ==========
 
@@ -5677,6 +5204,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'apps.usuarios.middleware.MicroserviceUserMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -5772,10 +5300,11 @@ LOGGING = {
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
 
 STATICFILES_DIRS = [
-        os.path.join(BASE_DIR, 'setup/static')
+    os.path.join(BASE_DIR, 'setup/static'),
+    # REMOVIDO: os.path.join(BASE_DIR, 'static') — conflita com STATIC_ROOT
 ]
 
 STATIC_ROOT = os.path.join(BASE_DIR, 'static')
@@ -5895,6 +5424,7 @@ AUTHENTICATION_BACKENDS = [
     # 'django.contrib.auth.backends.ModelBackend',  # Removido - não usa mais banco local
 ]
 
+
 ========== .\django_app\setup\urls.py ==========
 
 """
@@ -5914,10 +5444,11 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import path, include, re_path
 
 from django.conf import settings
 from django.conf.urls.static import static
+from django.views.static import serve as static_serve
 
 from django.contrib.auth import views as auth_views
 
@@ -5936,7 +5467,15 @@ urlpatterns = [
         path("senha/alterar/", auth_views.PasswordChangeView.as_view(template_name="usuarios/alterar_senha.html"), name="password_change"),
         path("senha/alterar/sucesso/", auth_views.PasswordChangeDoneView.as_view(template_name="usuarios/senha_alterada.html"), name="password_change_done"),
 
-] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+]
+
+if settings.DEBUG:
+        urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+        urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+else:
+        urlpatterns += [
+                re_path(r'^static/(?P<path>.*)$', static_serve, {'document_root': settings.STATIC_ROOT}),
+        ]
 
 
 ========== .\django_app\setup\wsgi.py ==========
@@ -7223,7 +6762,7 @@ select {
   position: absolute;
   cursor: pointer;
   top: 0; left: 0; right: 0; bottom: 0;
-  background-color: var(--secundaria); /* inativo */
+  background-color: #9ca3af; /* inativo/revogado */
   transition: .4s;
   border-radius: 26px;
 }
@@ -7590,6 +7129,7 @@ input:checked + .slider:before {
     flex: 1 1 auto;   /* Faz os botões dividirem o espaço */
     min-width: 100px;   /* Garante um tamanho mínimo legível */
 }
+
 
 ========== .\django_app\setup\static\styles\toggleView.css ==========
 
@@ -40900,7 +40440,7 @@ select {
   position: absolute;
   cursor: pointer;
   top: 0; left: 0; right: 0; bottom: 0;
-  background-color: var(--secundaria); /* inativo */
+  background-color: #9ca3af; /* inativo/revogado */
   transition: .4s;
   border-radius: 26px;
 }
@@ -41268,6 +40808,7 @@ input:checked + .slider:before {
     min-width: 100px;   /* Garante um tamanho mínimo legível */
 }
 
+
 ========== .\django_app\static\styles\toggleView.css ==========
 
 /* Estilo para visualização em cards */
@@ -41318,10 +40859,10 @@ input:checked + .slider:before {
     
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="{% static '/styles/global_v3.css' %}">
+    <link rel="stylesheet" href="{% static 'styles/global_v3.css' %}">
 
     <!-- Font Awesome 6 (via CDN) -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" integrity="sha512-yQtkbz74y4FUR6KDLXGpKmhQZh+R0V44CMWvj3JZ3NrfuTtMTZIsVJ9M0Fz7KlEIb3WyIRLrjBE6aa12m19a9g==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
 
     <link rel="icon" href="{% static 'assets/imagens/favicon.png' %}" type="image/png">
 
@@ -43069,6 +42610,11 @@ function atualizarStatusPilula(checkbox) {
                             >
                             <img id="previewFoto" src="#" alt="Pré-visualização" 
                                 style="display:none; max-width:100%; margin-top:1em; border-radius:8px;">
+                        {% elif field.field.widget.input_type == "select" %}
+                            {{ field|add_class:"form-select" }}
+                            {% if field.help_text %}
+                                <small class="form-text text-muted">{{ field.help_text|safe }}</small>
+                            {% endif %}
                         {% else %}
                             {{ field|add_class:"form-control" }}
                             {% if field.help_text %}
@@ -43184,6 +42730,8 @@ document.addEventListener("DOMContentLoaded", function () {
                             >
                             <img id="previewFoto" src="#" alt="Pré-visualização" 
                                 style="display:none; max-width:100%; margin-top:1em; border-radius:8px;">
+                        {% elif field.field.widget.input_type == "select" %}
+                            {{ field|add_class:"form-select" }}
                         {% else %}
                             {{ field|add_class:"form-control" }}
                         {% endif %}
@@ -43366,7 +42914,9 @@ document.getElementById('modalConfirmacaoConsentimento').addEventListener('hidde
                                 <label class="switch">
                                     <input type="checkbox" 
                                            name="revogar" 
-                                           {% if gestante.consentimento_ativo %}checked{% endif %} 
+                                           {% if gestante.consentimento_ativo %}
+                                                checked
+                                           {% endif %} 
                                            onchange="abrirModalConfirmacao({{ gestante.id }}, this)">
                                     <span class="slider round"></span>
                                 </label>
@@ -43385,7 +42935,7 @@ document.getElementById('modalConfirmacaoConsentimento').addEventListener('hidde
                     <div class="card-modern-right">
                         
                             <h5 class="card-title">
-                                {{ gestante.primeiro_nome }} {{ gestante.ultimo_nome }}
+                                {{ gestante.nome }}
                                 <i class="fa-solid fa-chevron-right ms-1 d-md-none" style="font-size: .9em;"></i>
                             </h5>
                             <span> <strong>Idade:</strong> {{ gestante.idade }} </span>
@@ -43393,19 +42943,15 @@ document.getElementById('modalConfirmacaoConsentimento').addEventListener('hidde
                             
                             {% if gestante.imc %}
                                 <strong>| IMC:</strong>
-                                <span class="{{ gestante.imc_cor }}">
-                                     {{ gestante.imc }}
+                                <span class="text-muted">
+                                     {{ gestante.imc }} ({{ gestante.imc_classificacao }})
                                 </span>
                             {% else %}
                                 <span class="text-muted">IMC indisponível</span>
                             {% endif %}
                             
                             </p>
-                            {% if gestante.questionarios.last %}
-                                <p class="text-muted"><small>Última avaliação: {{ gestante.questionarios.last.data_aplicacao|date:"d/m/Y" }}</small></p>
-                            {% else %}
-                                <p class="text-muted"><small>Sem avaliações registradas</small></p>
-                            {% endif %}
+                            <p class="text-muted"><small>Última avaliação: Não disponível</small></p>
                       
 
                         <div class="mt-3 d-flex flex-column align-items-center gap-2">
@@ -43416,50 +42962,15 @@ document.getElementById('modalConfirmacaoConsentimento').addEventListener('hidde
                                     Avaliar
                                     </a>
 
-                                {% if gestante.questionarios.last %}
-                                    {% with ultima_avaliacao=gestante.questionarios.last %}
-                                        {% if ultima_avaliacao.status_processamento_pills == 'COMPLETED' %}
-                                            <a href="{% url 'pilulas' gestante.id %}" 
-                                            id="btn-comunicar-{{ gestante.id }}"
-                                            class="btn-secondary">
-                                               Mensagens
-                                            </a>
-                                        {% elif ultima_avaliacao.status_processamento_pills == 'FAILED' %}
-                                            <a href="#"
-                                            id="btn-comunicar-{{ gestante.id }}"
-                                            class="btn-secondary disabled"
-                                            tabindex="-1"
-                                            aria-disabled="true"
-                                            data-bs-toggle="tooltip"
-                                            data-bs-placement="top"
-                                            title="A MarIA teve um erro ao processar essa avaliação. Tente gerar uma nova avaliação para reprocessar.">
-                                               Mensagens
-                                            </a>
-                                        {% else %}
-                                            {# PENDING ou PROCESSING #}
-                                            <a href="#"
-                                            id="btn-comunicar-{{ gestante.id }}"
-                                            class="btn-secondary disabled"
-                                            tabindex="-1"
-                                            aria-disabled="true"
-                                            data-bs-toggle="tooltip"
-                                            data-bs-placement="top"
-                                            title="A MarIA ainda está processando as informações. Aguarde mais um pouco.">
-                                               Mensagens
-                                            </a>
-                                        {% endif %}
-                                    {% endwith %}
-                                {% else %}
-                                    <a href="#"
-                                    class="btn-secondary disabled"
-                                    tabindex="-1"
-                                    aria-disabled="true"
-                                    data-bs-toggle="tooltip"
-                                    data-bs-placement="top"
-                                    title="Você precisa registrar ao menos uma avaliação antes de pedir orientações.">
-                                       Mensagens
-                                    </a>
-                                {% endif %}
+                                <a href="#"
+                                class="btn-secondary disabled"
+                                tabindex="-1"
+                                aria-disabled="true"
+                                data-bs-toggle="tooltip"
+                                data-bs-placement="top"
+                                title="Funcionalidade em desenvolvimento">
+                                   Mensagens
+                                </a>
                             </div>
 
        
@@ -45205,6 +44716,7 @@ class GestanteResponse(GestanteBase):
     idade: int
     imc_classificacao: str
     telefone_whatsapp: Optional[str] = None
+    consentimento_ativo: bool = True
 
     class Config:
         from_attributes = True
@@ -45691,6 +45203,15 @@ class Gestante(Base):
             return None
         return re.sub(r"\D", "", self.telefone)
 
+    @property
+    def consentimento_ativo(self) -> bool:
+        """Verifica se o último consentimento é ativo (aceito)."""
+        if not self.consentimentos:
+            return True  # Se não há consentimentos, assume ativo (compatibilidade)
+        # Ordena por data_registro descendente e pega o mais recente
+        ultimo_consentimento = sorted(self.consentimentos, key=lambda c: c.data_registro, reverse=True)[0]
+        return ultimo_consentimento.status == "aceito"
+
 
 class ConsentimentoGestante(Base):
     __tablename__ = "consentimentos_gestante"
@@ -45802,6 +45323,7 @@ async def delete_consentimento(consentimento_id: int, db: Session = Depends(get_
 """
 Gestantes CRUD endpoints.
 """
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -45813,6 +45335,7 @@ from app.schemas import GestanteCreate, GestanteResponse, GestanteUpdate
 from app.services.gestantes import validar_regras_gestante
 
 router = APIRouter(prefix="/gestantes", tags=["Gestantes"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("", response_model=list[GestanteResponse])
@@ -45831,7 +45354,18 @@ async def list_gestantes(
         query = query.filter(Gestante.usuario_id == usuario_id)
     if vulnerabilidade_social is not None:
         query = query.filter(Gestante.vulnerabilidade_social == vulnerabilidade_social)
-    return query.order_by(Gestante.data_cadastro.desc()).offset(skip).limit(limit).all()
+
+    gestantes = query.order_by(Gestante.data_cadastro.desc()).offset(skip).limit(limit).all()
+    gestantes_debug = [
+        GestanteResponse.model_validate(gestante).model_dump(mode="json")
+        for gestante in gestantes
+    ]
+    logger.debug(
+        "list_gestantes retornou %s registros: %s",
+        len(gestantes),
+        gestantes_debug,
+    )
+    return gestantes
 
 
 @router.get("/{gestante_id}", response_model=GestanteResponse)

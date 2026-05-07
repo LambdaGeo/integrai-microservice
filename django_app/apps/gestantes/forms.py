@@ -1,68 +1,77 @@
 from django import forms
 
 import django_rq
-
-from apps.gestantes.models import Gestante, Avaliacao
-
 import re
+from datetime import datetime
 
-from . import services # usar sincrono por enquanto, depois configurar redis/celery
+# DESABILITADO: Modelos migrados para microservice gestantes-service
+# from apps.gestantes.models import Gestante, Avaliacao
+# from . import services
+# from apps.gestantes.tasks import gerar_sintese_llm_task, gerar_pilulas_task
 
-# --- INÍCIO DA INTEGRAÇÃO COM A API R ---
-from apps.gestantes.tasks import gerar_sintese_llm_task, gerar_pilulas_task
 
-class GestanteForms(forms.ModelForm):
-    class Meta:
-        model = Gestante
-        exclude = ["usuario"]
-        
-        # Definindo a ordem explícita
-        fields = [
-            'nome',
-            'foto',
-            'telefone',
-            'data_nascimento',
-            'altura',
-            'peso',
-            'vulnerabilidade_social'
-            
-        ]
-
-        labels = {
-            'data_cadastro': 'Data da inserção',
-            'usuario': 'Usuário',
-        }
-
-        help_texts = {
-            'vulnerabilidade_social': (
-                '<span class="fw-bold text-danger">⚠ NÃO PERGUNTAR À GESTANTE!</span><br>'
-                'Este campo deve ser marcado por você com base nas suas visitas domiciliares: '
-            ),
-        }
-
-        widgets = {
-            'nome': forms.TextInput(attrs={'class':'form-control'}),
-            'foto': forms.FileInput(attrs={'class':'form-control'}),
-            'data_fotografia': forms.DateInput(
-                format='%Y-%m-%d',
-                attrs={'type':'date', 'class':'form-control'}
-            ),
-            
-            'telefone': forms.TextInput(attrs={
+# Forma simples para criação de gestantes via API microservice
+# Esta classe não herda de ModelForm pois o modelo foi migrado
+class GestanteForms(forms.Form):
+    """Formulário para criar/editar gestantes via API microservice"""
+    
+    nome = forms.CharField(
+        max_length=100,
+        required=True,
+        label="Nome Completo",
+        widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Nome da gestante'})
+    )
+    
+    foto = forms.ImageField(
+        required=False,
+        label="Foto",
+        widget=forms.FileInput(attrs={'class': 'form-control'})
+    )
+    
+    telefone = forms.CharField(
+        max_length=20,
+        required=False,
+        label="Telefone (preferencialmente WhatsApp)",
+        widget=forms.TextInput(attrs={
             'class': 'form-control',
-                'placeholder': 'Ex.: (83) 99999-1234 — preferencialmente WhatsApp'
-            }),
-
-            'altura': forms.NumberInput(
-                attrs={'class': 'form-control', 'step': '0.01', 'inputmode': 'decimal', 'placeholder': 'Digite a altura (ex: 1,58)'}
-            ),
-            'data_nascimento': forms.DateInput(
-                format='%Y-%m-%d',
-                attrs={'type': 'date', 'class': 'form-control'}
-            ),
-
-
-        }
+            'placeholder': 'Ex.: (83) 99999-1234'
+        })
+    )
+    
+    data_nascimento = forms.DateField(
+        required=True,
+        label="Data de Nascimento",
+        widget=forms.DateInput(
+            format='%Y-%m-%d',
+            attrs={'type': 'date', 'class': 'form-control'}
+        )
+    )
+    
+    altura = forms.FloatField(
+        required=True,
+        label="Altura (m)",
+        widget=forms.NumberInput(
+            attrs={'class': 'form-control', 'step': '0.01', 'placeholder': 'Ex: 1.58'}
+        )
+    )
+    
+    peso = forms.IntegerField(
+        required=True,
+        label="Peso pré-gestacional (kg)",
+        widget=forms.NumberInput(attrs={'class': 'form-control', 'placeholder': 'Ex: 70'})
+    )
+    
+    VULNERABILIDADE_CHOICES = [
+        (True, 'Sim'),
+        (False, 'Não'),
+    ]
+    vulnerabilidade_social = forms.TypedChoiceField(
+        required=False,
+        choices=VULNERABILIDADE_CHOICES,
+        coerce=lambda value: value == 'True',
+        widget=forms.Select(attrs={'class': 'form-select'}),
+        label='Com base nas suas visitas domiciliares, considera essa gestante em vulnerabilidade social?'
+    )
     
     def clean_altura(self):
         altura = self.cleaned_data.get('altura')
@@ -71,7 +80,10 @@ class GestanteForms(forms.ModelForm):
         if isinstance(altura, str):
             altura = altura.replace(',', '.')
         try:
-            return float(altura)
+            valor = float(altura)
+            if valor < 1.0 or valor > 2.5:
+                raise forms.ValidationError("A altura deve estar entre 1.0 e 2.5 metros.")
+            return valor
         except ValueError:
             raise forms.ValidationError("Informe um número válido para a altura (ex: 1,65)")
         
@@ -93,51 +105,42 @@ class GestanteForms(forms.ModelForm):
 
         return f"+55{numeros}"
     
-class AvaliacaoForm(forms.ModelForm):
-    class Meta:
-        model = Avaliacao
-        exclude = [
-            'gestante',
-            'resultado_integralidade_saude',
-            'llm_sintese',
-            'data_aplicacao',
-            'status_processamento_llm',
-            'status_processamento_pills',
-            'peso_atual','idade_gestacional', 'consultas_prenatal'
-        ]
+    def clean_peso(self):
+        peso = self.cleaned_data.get('peso')
+        if peso and (peso < 30 or peso > 200):
+            raise forms.ValidationError("O peso deve estar entre 30 e 200 kg.")
+        return peso
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Remove valores iniciais dos campos de marcar
-        for field_name, field in self.fields.items():
-            if isinstance(field, forms.BooleanField) or isinstance(field.widget, forms.RadioSelect):
-                field.initial = None
 
-    
-    def save(self, commit: bool = True, gestante: Gestante | None = None) -> Avaliacao:
-            # 1. Cria a instância (sem salvar no DB)
-            instance = super().save(commit=False)
-
-            if gestante is None and not instance.gestante_id:
-                raise ValueError("A avaliação deve estar associada a uma gestante.")
-
-            if gestante is not None:
-                instance.gestante = gestante
-
-            if commit:
-                # 1️⃣ Salva a avaliação
-                instance.save()
-
-                # 2️⃣ Processa o risco de forma síncrona
-                services.processar_risco_avaliacao(instance.id)
-
-                # 3️⃣ Atualiza o objeto
-                instance.refresh_from_db()
-
-                # 4️⃣ Dispara a geração da síntese LLM em background
-                django_rq.enqueue(gerar_sintese_llm_task, instance.id)
-
-                
-                django_rq.enqueue(gerar_pilulas_task, instance.id)
-
-            return instance
+# DESABILITADO: Classes que usam modelos migrados para microservice
+# 
+# class AvaliacaoForm(forms.ModelForm):
+#     class Meta:
+#         model = Avaliacao
+#         exclude = [
+#             'gestante',
+#             'resultado_integralidade_saude',
+#             'llm_sintese',
+#             'data_aplicacao',
+#             'status_processamento_llm',
+#             'status_processamento_pills',
+#             'peso_atual','idade_gestacional', 'consultas_prenatal'
+#         ]
+#
+#     def __init__(self, *args, **kwargs):
+#         super().__init__(*args, **kwargs)
+#         for field_name, field in self.fields.items():
+#             if isinstance(field, forms.BooleanField) or isinstance(field.widget, forms.RadioSelect):
+#                 field.initial = None
+#
+#     def save(self, commit: bool = True, gestante: Gestante | None = None) -> Avaliacao:
+#         instance = super().save(commit=False)
+#         if gestante is not None:
+#             instance.gestante = gestante
+#         if commit:
+#             instance.save()
+#             services.processar_risco_avaliacao(instance.id)
+#             instance.refresh_from_db()
+#             django_rq.enqueue(gerar_sintese_llm_task, instance.id)
+#             django_rq.enqueue(gerar_pilulas_task, instance.id)
+#         return instance

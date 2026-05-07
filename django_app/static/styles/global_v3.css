@@ -942,7 +942,7 @@ select {
   position: absolute;
   cursor: pointer;
   top: 0; left: 0; right: 0; bottom: 0;
-  background-color: var(--secundaria); /* inativo */
+  background-color: #9ca3af; /* inativo/revogado */
   transition: .4s;
   border-radius: 26px;
 }

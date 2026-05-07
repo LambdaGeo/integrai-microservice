@@ -1,6 +1,7 @@
 from django_rq import job
 from apps.gestantes import services
-from apps.gestantes.models import Avaliacao, Pilula
+# DESABILITADO: Modelos migrados para microservice gestantes-service
+# from apps.gestantes.models import Avaliacao, Pilula
 
 import logging
 

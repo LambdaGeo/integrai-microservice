@@ -1,12 +1,13 @@
 import csv
 from django.core.management.base import BaseCommand
-from apps.gestantes.models import Avaliacao, Pilula
+# DESABILITADO: Modelos migrados para microservice gestantes-service
+# from apps.gestantes.models import Avaliacao, Pilula
 
 class Command(BaseCommand):
-    help = 'Exports Avaliacao and Pilula data to CSV files'
+    help = 'Exports Avaliacao and Pilula data to CSV files (DESABILITADO - use microservice API)'
 
     def handle(self, *args, **options):
-        self.stdout.write(self.style.SUCCESS('Starting export...'))
+        self.stdout.write(self.style.WARNING('Este comando foi desabilitado. Use a API do microservice gestantes-service ao invés.'))
 
         # Export Avaliacoes
         with open('avaliacoes.csv', 'w', newline='', encoding='utf-8') as csvfile:
