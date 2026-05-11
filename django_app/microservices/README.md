@@ -150,7 +150,11 @@ O serviço de avaliações utiliza Redis + RQ para processamento assíncrono de:
 
 ## Considerações
 
-1. **Autenticação**: Cada serviço gerencia sua própria autenticação
+1. **Autenticação**: O `users-service` centraliza a emissão e validação dos tokens de acesso
 2. **Consistência de Dados**: Comunicação síncrona entre serviços para garantir consistência
-3. **Escalabilidade**: Cada serviço pode ser escalado independentemente
+3. **Escalabilidade**: Cada serviço pode ser escalado independentemente, respeitando suas dependências HTTP
 4. **Monitoramento**: Recomenda-se adicionar logging e métricas (Prometheus, Grafana)
+
+## Limitações metodológicas
+
+- **Acoplamento por introspecção de token**: o `gestantes-service` valida o Bearer token por chamada HTTP ao endpoint `GET /api/v1/auth/me` do `users-service`, em vez de validar localmente o JWT com uma chave compartilhada. Essa abordagem simplifica a centralização da autenticação no protótipo, mas cria dependência direta de disponibilidade: se o `users-service` estiver indisponível, os endpoints protegidos do `gestantes-service` também ficam indisponíveis para validação de autenticação. Portanto, a independência operacional entre os microsserviços fica parcialmente limitada.

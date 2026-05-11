@@ -12,7 +12,7 @@ from app.database import get_db
 from app.models import Avaliacao, Pilula
 from app.schemas import PilulaCreate, PilulaUpdate
 
-router = APIRouter(prefix="/pilulas", tags=["Pilulas"])
+router = APIRouter(prefix="/pilulas", tags=["Pílulas"])
 
 
 def pilula_to_dict(pilula: Pilula) -> dict:
@@ -63,7 +63,7 @@ async def create_pilula(
     data = payload.model_dump(by_alias=True)
     avaliacao = db.query(Avaliacao).filter(Avaliacao.id == data["avaliacao_id"]).first()
     if not avaliacao or not await can_access_gestante(avaliacao.gestante, current_user.get("access_token")):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado")
     pilula = Pilula(**data)
     db.add(pilula)
     db.commit()
@@ -79,7 +79,7 @@ async def get_pilula(
 ):
     pilula = db.query(Pilula).options(joinedload(Pilula.avaliacao)).filter(Pilula.id == pilula_id).first()
     if not pilula or not await can_access_gestante(pilula.avaliacao.gestante, current_user.get("access_token")):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pílula não encontrada")
     return pilula_to_dict(pilula)
 
 
@@ -92,13 +92,13 @@ async def update_pilula(
 ):
     pilula = db.query(Pilula).options(joinedload(Pilula.avaliacao)).filter(Pilula.id == pilula_id).first()
     if not pilula or not await can_access_gestante(pilula.avaliacao.gestante, current_user.get("access_token")):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pílula não encontrada")
 
     updates = payload.model_dump(exclude_unset=True, by_alias=True)
     if updates.get("avaliacao_id"):
         nova_avaliacao = db.query(Avaliacao).filter(Avaliacao.id == updates["avaliacao_id"]).first()
         if not nova_avaliacao or not await can_access_gestante(nova_avaliacao.gestante, current_user.get("access_token")):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado")
     for field, value in updates.items():
         setattr(pilula, field, value)
     db.commit()
@@ -114,7 +114,7 @@ async def delete_pilula(
 ):
     pilula = db.query(Pilula).options(joinedload(Pilula.avaliacao)).filter(Pilula.id == pilula_id).first()
     if not pilula or not await can_access_gestante(pilula.avaliacao.gestante, current_user.get("access_token")):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pílula não encontrada")
     db.delete(pilula)
     db.commit()
     return None
@@ -128,7 +128,7 @@ async def marcar_pilula_enviada(
 ):
     pilula = db.query(Pilula).options(joinedload(Pilula.avaliacao)).filter(Pilula.id == pilula_id).first()
     if not pilula or not await can_access_gestante(pilula.avaliacao.gestante, current_user.get("access_token")):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pílula não encontrada")
     pilula.status = "enviada"
     pilula.data_envio = datetime.now(timezone.utc)
     db.commit()

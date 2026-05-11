@@ -29,17 +29,17 @@ EXT_LLM_SINTESE = "https://integrai.ufma.br/fhir/StructureDefinition/avaliacao-l
 AVALIACAO_COMPONENTS = {
     "peso_atual": {"display": "Peso atual", "value": "valueQuantity", "unit": "kg", "code": "kg"},
     "idade_gestacional": {"display": "Idade gestacional em semanas", "value": "valueInteger"},
-    "consultas_prenatal": {"display": "Quantidade de consultas pre-natal", "value": "valueInteger"},
+    "consultas_prenatal": {"display": "Quantidade de consultas pré-natal", "value": "valueInteger"},
     "corrimento_vaginal": {"display": "Corrimento vaginal frequente", "value": "valueBoolean"},
-    "periodontite_carie": {"display": "Carie e/ou periodontite", "value": "valueBoolean"},
-    "hipertensao_gestacao": {"display": "Hipertensao na gestacao", "value": "valueBoolean"},
-    "diabetes_gestacao": {"display": "Diabetes na gestacao", "value": "valueBoolean"},
-    "estresse_gestacao": {"display": "Estresse durante gestacao", "value": "valueBoolean"},
-    "historico_familiar_alergia": {"display": "Historico familiar de alergia", "value": "valueBoolean"},
-    "consumo_bebidas_adocadas": {"display": "Consumo de bebidas adocadas", "value": "valueBoolean"},
+    "periodontite_carie": {"display": "Cárie e/ou periodontite", "value": "valueBoolean"},
+    "hipertensao_gestacao": {"display": "Hipertensão na gestação", "value": "valueBoolean"},
+    "diabetes_gestacao": {"display": "Diabetes na gestação", "value": "valueBoolean"},
+    "estresse_gestacao": {"display": "Estresse durante gestação", "value": "valueBoolean"},
+    "historico_familiar_alergia": {"display": "Histórico familiar de alergia", "value": "valueBoolean"},
+    "consumo_bebidas_adocadas": {"display": "Consumo de bebidas adoçadas", "value": "valueBoolean"},
     "consumo_ultraprocessados": {"display": "Consumo de ultraprocessados", "value": "valueBoolean"},
-    "consumo_alcool": {"display": "Consumo de alcool", "value": "valueBoolean"},
-    "fumante_gestacao": {"display": "Fumante na gestacao", "value": "valueBoolean"},
+    "consumo_alcool": {"display": "Consumo de álcool", "value": "valueBoolean"},
+    "fumante_gestacao": {"display": "Fumante na gestação", "value": "valueBoolean"},
 }
 
 
@@ -238,9 +238,9 @@ class AvaliacoesServiceClient(BaseServiceClient):
                 "coding": [{
                     "system": FHIR_SYSTEM,
                     "code": OBSERVATION_CODE,
-                    "display": "Avaliacao gestacional",
+                    "display": "Avaliação gestacional",
                 }],
-                "text": "Avaliacao gestacional",
+                "text": "Avaliação gestacional",
             },
             "subject": {"reference": f"Patient/{data['gestante']}"},
             "component": [],

@@ -103,10 +103,10 @@ async def create_observation(
         return operation_outcome(status.HTTP_400_BAD_REQUEST, str(exc), code="invalid")
 
     if not data.get("gestante"):
-        return operation_outcome(status.HTTP_400_BAD_REQUEST, "subject Patient reference is required", code="invalid")
+        return operation_outcome(status.HTTP_400_BAD_REQUEST, "Referência subject Patient é obrigatória", code="invalid")
 
     if not await can_access_gestante(data.get("gestante"), access_token):
-        return operation_outcome(status.HTTP_403_FORBIDDEN, "Access denied", code="forbidden")
+        return operation_outcome(status.HTTP_403_FORBIDDEN, "Acesso negado", code="forbidden")
 
     avaliacao = Avaliacao(**data)
     db.add(avaliacao)
@@ -139,7 +139,7 @@ async def update_observation(
         return operation_outcome(status.HTTP_400_BAD_REQUEST, str(exc), code="invalid")
 
     if data.get("gestante") and not await can_access_gestante(data["gestante"], access_token):
-        return operation_outcome(status.HTTP_403_FORBIDDEN, "Access denied", code="forbidden")
+        return operation_outcome(status.HTTP_403_FORBIDDEN, "Acesso negado", code="forbidden")
 
     for key, value in data.items():
         setattr(avaliacao, key, value)

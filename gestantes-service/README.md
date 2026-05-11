@@ -31,6 +31,10 @@ API de gerenciamento de gestantes em FastAPI, com suporte FHIR R4 (Patient).
 - Comunicação externa: API REST HTTP e fachada FHIR R4.
 - Porta padrão interna: `8001`.
 
+## Limitação metodológica
+
+- A autenticação dos endpoints protegidos usa introspecção de token: o `gestantes-service` encaminha o Bearer token para `GET /api/v1/auth/me` no `users-service`. Isso não é validação local do JWT com chave compartilhada. Como consequência, a indisponibilidade do `users-service` impede a validação de usuários e torna os endpoints protegidos do `gestantes-service` indisponíveis. Essa decisão simplifica o protótipo, mas aumenta o acoplamento entre serviços e deve ser considerada uma limitação da arquitetura avaliada.
+
 ## Executar localmente
 
 ```bash

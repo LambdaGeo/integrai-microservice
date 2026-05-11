@@ -64,9 +64,9 @@ async def fhir_metadata():
 
 @router.get("/Patient")
 async def search_patients(
-    identifier: Optional[str] = Query(None, description="Patient identifier (CPF)"),
-    active: Optional[bool] = Query(None, description="Patient is active"),
-    _count: Optional[int] = Query(20, description="Number of results"),
+    identifier: Optional[str] = Query(None, description="Identificador do Patient (CPF)"),
+    active: Optional[bool] = Query(None, description="Patient ativo"),
+    _count: Optional[int] = Query(20, description="Número de resultados"),
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user)
 ):
@@ -113,7 +113,7 @@ async def get_patient(
     if not usuario:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Patient not found"
+            detail="Patient não encontrado"
         )
     
     patient = usuario_to_fhir_patient(usuario)
@@ -137,7 +137,7 @@ async def create_patient(
     except ValidationError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid FHIR Patient: {str(e)}"
+            detail=f"FHIR Patient inválido: {str(e)}"
         )
     
     # Convert to Usuario
@@ -148,7 +148,7 @@ async def create_patient(
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Patient already exists"
+            detail="Patient já existe"
         )
     
     # Create
@@ -182,14 +182,14 @@ async def update_patient(
     except ValidationError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid FHIR Patient: {str(e)}"
+            detail=f"FHIR Patient inválido: {str(e)}"
         )
     
     usuario = db.query(Usuario).filter(Usuario.id == patient_id).first()
     if not usuario:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Patient not found"
+            detail="Patient não encontrado"
         )
     
     # Update fields
@@ -220,7 +220,7 @@ async def delete_patient(
     if not usuario:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Patient not found"
+            detail="Patient não encontrado"
         )
     
     usuario.is_active = False
@@ -233,9 +233,9 @@ async def delete_patient(
 
 @router.get("/Practitioner")
 async def search_practitioners(
-    name: Optional[str] = Query(None, description="Practitioner name"),
-    active: Optional[bool] = Query(None, description="Practitioner is active"),
-    _count: Optional[int] = Query(20, description="Number of results"),
+    name: Optional[str] = Query(None, description="Nome do Practitioner"),
+    active: Optional[bool] = Query(None, description="Practitioner ativo"),
+    _count: Optional[int] = Query(20, description="Número de resultados"),
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user)
 ):
@@ -280,7 +280,7 @@ async def get_practitioner(
     if not profile:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Practitioner not found"
+            detail="Practitioner não encontrado"
         )
     
     practitioner = agenteprofile_to_fhir_practitioner(profile)
@@ -304,7 +304,7 @@ async def create_practitioner(
     except ValidationError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid FHIR Practitioner: {str(e)}"
+            detail=f"FHIR Practitioner inválido: {str(e)}"
         )
     
     profile_data = fhir_practitioner_to_agenteprofile(practitioner)
@@ -314,7 +314,7 @@ async def create_practitioner(
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Practitioner already exists"
+            detail="Practitioner já existe"
         )
     
     # Create

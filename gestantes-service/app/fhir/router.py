@@ -76,7 +76,7 @@ async def capability_statement():
                 "documentation": "Minimal FHIR R4 REST API for the Patient resource in the gestantes bounded context.",
                 "security": {
                     "cors": True,
-                    "description": "Authentication is not enabled in this academic prototype.",
+                    "description": "Autenticação via Bearer token é exigida para os endpoints FHIR protegidos.",
                 },
                 "resource": [
                     {

@@ -53,7 +53,7 @@ async def montar_payload_predicao(
     imc = calcular_imc(patient)
 
     if idade is None or imc is None:
-        raise ValueError("Patient sem dados suficientes para calcular idade gestante e IMC pre-gestacional.")
+        raise ValueError("Paciente sem dados suficientes para calcular idade da gestante e IMC pré-gestacional.")
 
     payload = {field: bool(getattr(avaliacao, field)) for field in QUESTIONARIO_FIELDS}
     payload["imc_pre_gestacional"] = imc
@@ -71,7 +71,7 @@ async def buscar_patient(gestante_id: int, access_token: str | None = None) -> d
     response.raise_for_status()
     data = response.json()
     if not data or data.get("resourceType") == "OperationOutcome":
-        raise ValueError(f"Gestante {gestante_id} nao encontrada no gestantes-service.")
+        raise ValueError(f"Gestante {gestante_id} não encontrada no gestantes-service.")
     return data
 
 

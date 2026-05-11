@@ -30,7 +30,7 @@ async def get_my_profile(
     if not profile:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Profile not found"
+            detail="Perfil não encontrado"
         )
     return profile
 
@@ -47,7 +47,7 @@ async def create_profile(
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Profile already exists for this user"
+            detail="Perfil já existe para este usuário"
         )
     
     # Create profile
@@ -76,7 +76,7 @@ async def update_my_profile(
     if not profile:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Profile not found"
+            detail="Perfil não encontrado"
         )
     
     # Update fields
@@ -130,7 +130,7 @@ async def get_usuario_by_cpf(
     if not usuario:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Usuario not found"
+            detail="Usuário não encontrado"
         )
     return usuario
 
@@ -145,7 +145,7 @@ async def get_usuario(
     if not usuario:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Usuario not found"
+            detail="Usuário não encontrado"
         )
     return usuario
 
@@ -160,7 +160,7 @@ async def get_usuario_by_username(
     if not usuario:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Usuario not found"
+            detail="Usuário não encontrado"
         )
     return usuario
 
@@ -176,7 +176,7 @@ async def create_usuario(
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already registered"
+            detail="Usuário já cadastrado"
         )
     
     # Check if email already exists
@@ -185,7 +185,7 @@ async def create_usuario(
         if existing_email:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered"
+                detail="Email já cadastrado"
             )
     
     # Create usuario
@@ -213,7 +213,7 @@ async def update_usuario(
     if not usuario:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Usuario not found"
+            detail="Usuário não encontrado"
         )
     
     # Update fields
@@ -239,7 +239,7 @@ async def delete_usuario(
     if not usuario:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Usuario not found"
+            detail="Usuário não encontrado"
         )
     
     # Soft delete - just deactivate

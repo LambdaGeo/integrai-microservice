@@ -10,7 +10,7 @@ from app.models.usuario import Usuario
 from app.schemas import Token, TokenWithUser, PasswordResetRequest, PasswordResetConfirm, UsuarioResponse
 from app.auth import verify_password, create_access_token, get_password_hash, get_current_active_user
 
-router = APIRouter(prefix="/auth", tags=["Authentication"])
+router = APIRouter(prefix="/auth", tags=["Autenticação"])
 
 
 @router.get("/me", response_model=UsuarioResponse)
@@ -35,21 +35,21 @@ async def login(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
+            detail="Usuário ou senha incorretos",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
     if not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
+            detail="Usuário ou senha incorretos",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Inactive user"
+            detail="Usuário inativo"
         )
     
     access_token = create_access_token(
@@ -81,19 +81,19 @@ async def login_json(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password"
+            detail="Usuário ou senha incorretos"
         )
     
     if not verify_password(password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password"
+            detail="Usuário ou senha incorretos"
         )
     
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Inactive user"
+            detail="Usuário inativo"
         )
     
     access_token = create_access_token(
@@ -155,7 +155,7 @@ async def confirm_password_reset(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid reset request"
+            detail="Solicitação de recuperação inválida"
         )
     
     # Atualizar senha

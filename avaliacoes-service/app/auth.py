@@ -19,7 +19,7 @@ async def require_authenticated_user(
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
+            detail="Usuário não autenticado",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -32,17 +32,17 @@ async def require_authenticated_user(
     except httpx.HTTPError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Users service unavailable",
+            detail="Serviço de usuários indisponível",
         ) from exc
 
     if response.status_code == status.HTTP_401_UNAUTHORIZED:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid access token",
+            detail="Token de acesso inválido",
             headers={"WWW-Authenticate": "Bearer"},
         )
     if response.status_code >= 400:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado")
 
     user = response.json()
     user["access_token"] = credentials.credentials

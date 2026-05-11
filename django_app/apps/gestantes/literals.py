@@ -9,7 +9,7 @@ NOMES_FATORES_ING = {
     "family_h": "Histórico familiar de alergias",
     "blockupf2": "Consumo de ultraprocessados",
     "alcohol_p": "Consumo de álcool",
-    "smoking_p": "Fumante gestação",
+    "smoking_p": "Fumante na gestação",
     "maternalbmi_bp": "IMC materno pré-gestacional",
     "maternalage_p": "Idade materna"
 }
@@ -25,7 +25,7 @@ NOMES_FATORES = {
     "historico_familiar_alergia": "Histórico familiar de alergias",
     "consumo_ultraprocessados": "Consumo de ultraprocessados",
     "consumo_alcool": "Consumo de álcool",
-    "fumante_gestacao": "Fumante gestação",
+    "fumante_gestacao": "Fumante na gestação",
     "imc_pre_gestacional": "IMC materno pré-gestacional",
     "idade_gestante": "Idade materna"
 }

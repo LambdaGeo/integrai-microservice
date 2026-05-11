@@ -11,7 +11,7 @@ from app.database import get_db
 from app.models import Avaliacao
 from app.schemas import AvaliacaoCreate, AvaliacaoUpdate
 
-router = APIRouter(prefix="/avaliacoes", tags=["Avaliacoes"])
+router = APIRouter(prefix="/avaliacoes", tags=["Avaliações"])
 
 
 def avaliacao_to_dict(avaliacao: Avaliacao) -> dict:
@@ -71,7 +71,7 @@ async def create_avaliacao(
     current_user: dict = Depends(require_authenticated_user),
 ):
     if not await can_access_gestante(payload.gestante, current_user.get("access_token")):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado")
     avaliacao = Avaliacao(**payload.model_dump())
     db.add(avaliacao)
     db.commit()
@@ -87,7 +87,7 @@ async def get_avaliacao(
 ):
     avaliacao = db.query(Avaliacao).filter(Avaliacao.id == avaliacao_id).first()
     if not avaliacao or not await can_access_gestante(avaliacao.gestante, current_user.get("access_token")):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Avaliação não encontrada")
     return avaliacao_to_dict(avaliacao)
 
 
@@ -100,11 +100,11 @@ async def update_avaliacao(
 ):
     avaliacao = db.query(Avaliacao).filter(Avaliacao.id == avaliacao_id).first()
     if not avaliacao or not await can_access_gestante(avaliacao.gestante, current_user.get("access_token")):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Avaliação não encontrada")
 
     updates = payload.model_dump(exclude_unset=True)
     if updates.get("gestante") and not await can_access_gestante(updates["gestante"], current_user.get("access_token")):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado")
     for field, value in updates.items():
         setattr(avaliacao, field, value)
     db.commit()
@@ -120,7 +120,7 @@ async def delete_avaliacao(
 ):
     avaliacao = db.query(Avaliacao).filter(Avaliacao.id == avaliacao_id).first()
     if not avaliacao or not await can_access_gestante(avaliacao.gestante, current_user.get("access_token")):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Avaliação não encontrada")
     db.delete(avaliacao)
     db.commit()
     return None
