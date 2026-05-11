@@ -8,12 +8,15 @@ ESTRUTURA DO PROJETO
         [FILE] __init__.py
         [FILE] admin.py
         [FILE] apps.py
+        [FILE] authentication.py
+        [FILE] authorization.py
         [DIR]  fhir/
             [FILE] serializers.py
             [FILE] urls.py
             [FILE] views.py
         [FILE] models.py
         [FILE] serializers.py
+        [FILE] services.py
         [FILE] urls.py
         [FILE] views.py
     [FILE] manage.py
@@ -78,6 +81,14 @@ ESTRUTURA DO PROJETO
                 [FILE] sopa_de_camarão.jpg
         [DIR]  fotos_agentes/
             [FILE] maycu.png
+        [DIR]  gestantes/
+            [DIR]  fotos/
+                [FILE] 172 sabatina.jpg
+                [FILE] 24_1600x2000+fill_ffffff.jpg
+                [FILE] Sopa de Carne.jpg
+                [FILE] maycu.jpg
+                [FILE] sopa de camarão.jpg
+                [FILE] sopa de camarão_j4VNbPT.jpg
     [DIR]  microservices/
         [FILE] README.md
         [FILE] clients.py
@@ -485,6 +496,7 @@ ESTRUTURA DO PROJETO
     [FILE] README.md
     [DIR]  app/
         [FILE] __init__.py
+        [FILE] auth.py
         [FILE] config.py
         [FILE] database.py
         [DIR]  fhir/
@@ -854,6 +866,7 @@ services:
       - DB_PASSWORD=${AVALIACOES_DB_PASSWORD:-postgres}
       - USERS_SERVICE_URL=http://users-service:8000
       - GESTANTES_SERVICE_URL=http://gestantes-service:8001
+      - R_API_URL=http://predition_api:8000/predict
     networks:
       - app-network
     restart: unless-stopped
@@ -1077,6 +1090,106 @@ class AvaliacoesConfig(AppConfig):
     name = 'avaliacoes'
     verbose_name = 'Avaliações'
 
+========== .\avaliacoes-service\avaliacoes\authentication.py ==========
+
+"""DRF authentication backed by the users-service bearer token."""
+import json
+from types import SimpleNamespace
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
+
+from django.conf import settings
+from rest_framework import authentication, exceptions
+
+
+class UsersServiceAuthentication(authentication.BaseAuthentication):
+    keyword = "Bearer"
+
+    def authenticate(self, request):
+        header = authentication.get_authorization_header(request).decode("utf-8")
+        if not header:
+            return None
+
+        parts = header.split()
+        if len(parts) != 2 or parts[0].lower() != self.keyword.lower():
+            raise exceptions.AuthenticationFailed("Invalid authorization header")
+
+        auth_request = Request(
+            f"{settings.USERS_SERVICE_URL}/api/v1/auth/me",
+            method="GET",
+            headers={"Authorization": header},
+        )
+
+        try:
+            with urlopen(auth_request, timeout=5) as response:
+                data = json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            if exc.code == 401:
+                raise exceptions.AuthenticationFailed("Invalid access token") from exc
+            raise exceptions.PermissionDenied("Access denied") from exc
+        except (URLError, TimeoutError, json.JSONDecodeError) as exc:
+            raise exceptions.AuthenticationFailed("Users service unavailable") from exc
+
+        user = SimpleNamespace(
+            id=data.get("id"),
+            username=data.get("username"),
+            email=data.get("email"),
+            is_active=data.get("is_active", False),
+            is_staff=data.get("is_staff", False),
+            is_superuser=data.get("is_superuser", False),
+            is_authenticated=True,
+        )
+        return user, parts[1]
+
+    def authenticate_header(self, request):
+        return self.keyword
+
+
+========== .\avaliacoes-service\avaliacoes\authorization.py ==========
+
+"""Authorization helpers that delegate gestante access to gestantes-service."""
+import json
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
+
+from django.conf import settings
+
+
+def authorized_gestante_ids(access_token, count=200):
+    if not access_token:
+        return []
+
+    query = urlencode({"_count": count})
+    request = Request(
+        f"{settings.GESTANTES_SERVICE_URL.rstrip('/')}/fhir/Patient?{query}",
+        method="GET",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    try:
+        with urlopen(request, timeout=10) as response:
+            bundle = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError):
+        return []
+
+    ids = []
+    for entry in bundle.get("entry", []) or []:
+        resource_id = (entry.get("resource") or {}).get("id")
+        try:
+            ids.append(int(resource_id))
+        except (TypeError, ValueError):
+            continue
+    return ids
+
+
+def can_access_gestante(gestante_id, access_token):
+    try:
+        gestante_id = int(gestante_id)
+    except (TypeError, ValueError):
+        return False
+    return gestante_id in authorized_gestante_ids(access_token)
+
+
 ========== .\avaliacoes-service\avaliacoes\models.py ==========
 
 from datetime import timedelta
@@ -1089,34 +1202,41 @@ class Avaliacao(models.Model):
     STATUS_LLM_CHOICES = [
         ('PENDING', 'Pendente'),
         ('PROCESSING', 'Processando LLM'),
-        ('COMPLETED', 'LLM Concluido'),
+        ('COMPLETED', 'LLM Concluído'),
         ('FAILED', 'LLM Falhou'),
     ]
 
+    gestante = models.ForeignKey('Gestante', on_delete=models.CASCADE, related_name='questionarios')
+    data_aplicacao = models.DateTimeField(verbose_name="Data da Avaliação", default=timezone.now)
+    peso_atual = models.FloatField(verbose_name="Peso atual:", null=True)
+    idade_gestacional = models.PositiveIntegerField(verbose_name="Idade Gestacional (em semanas)", null=True)
+    consultas_prenatal = models.PositiveIntegerField(verbose_name="Quantidade de consultas pré-natal", null=True)
+    
+    # Questionário SIM/P
     gestante = models.PositiveIntegerField(db_index=True)
     data_aplicacao = models.DateTimeField(verbose_name="Data da Avaliacao", default=timezone.now)
     peso_atual = models.FloatField(verbose_name="Peso atual:", null=True, blank=True)
     idade_gestacional = models.PositiveIntegerField(verbose_name="Idade Gestacional (em semanas)", null=True, blank=True)
-    consultas_prenatal = models.PositiveIntegerField(verbose_name="Quantidade de consultas pre-natal", null=True, blank=True)
-
     corrimento_vaginal = models.BooleanField(default=False, verbose_name='Corrimento vaginal frequente?')
-    periodontite_carie = models.BooleanField(default=False, verbose_name='Carie e/ou periodontite?')
-    hipertensao_gestacao = models.BooleanField(default=False, verbose_name='Hipertensao na gestacao?')
-    diabetes_gestacao = models.BooleanField(default=False, verbose_name='Diabetes na gestacao?')
-    estresse_gestacao = models.BooleanField(default=False, verbose_name='Estresse durante gestacao?')
-    historico_familiar_alergia = models.BooleanField(default=False, verbose_name='Historico familiar de alergia?')
-    consumo_bebidas_adocadas = models.BooleanField(default=False, verbose_name='Consumo de bebidas adocadas?')
+    periodontite_carie = models.BooleanField(default=False, verbose_name='Cárie e/ou periodontite?')
+    hipertensao_gestacao = models.BooleanField(default=False, verbose_name='Hipertensão na gestação?')
+    diabetes_gestacao = models.BooleanField(default=False, verbose_name='Diabetes na gestação?')
+    estresse_gestacao = models.BooleanField(default=False, verbose_name='Estresse durante gestação?')
+    historico_familiar_alergia = models.BooleanField(default=False, verbose_name='Histórico familiar de alergia?')
+    consumo_bebidas_adocadas = models.BooleanField(default=False, verbose_name='Consumo de bebidas adoçadas?')
     consumo_ultraprocessados = models.BooleanField(default=False, verbose_name='Consumo de ultraprocessados?')
-    consumo_alcool = models.BooleanField(default=False, verbose_name='Consumo de alcool?')
+    consumo_alcool = models.BooleanField(default=False, verbose_name='Consumo de álcool?')
     fumante_gestacao = models.BooleanField(default=False, verbose_name='Fumante?')
 
     resultado_integralidade_saude = models.JSONField(null=True, blank=True)
     status_processamento_llm = models.CharField(max_length=20, choices=STATUS_LLM_CHOICES, default='PENDING')
     status_processamento_pills = models.CharField(max_length=20, choices=STATUS_LLM_CHOICES, default='PENDING')
-    llm_sintese = models.TextField(null=True, blank=True, verbose_name="Sintese gerada pela LLM")
+    llm_sintese = models.TextField(null=True, blank=True, verbose_name="Síntese gerada pela LLM")
 
     @property
     def ganho_peso(self):
+        if self.gestante and self.gestante.peso and self.peso_atual:
+            return round(self.peso_atual - self.gestante.peso, 2)
         return None
 
     @property
@@ -1131,18 +1251,18 @@ class Avaliacao(models.Model):
 
     class Meta:
         verbose_name = 'Avaliacao'
-        verbose_name_plural = 'Avaliacoes'
+        verbose_name_plural = 'Avaliações'
         ordering = ['gestante', 'data_aplicacao']
 
     def __str__(self):
-        return f"Questionario da gestante {self.gestante} em {self.data_aplicacao.strftime('%d/%m/%Y')}"
+        return f"Questionário de {self.gestante.nome} em {self.data_aplicacao.strftime('%d/%m/%Y')}"
 
 
 class Pilula(models.Model):
     avaliacao = models.ForeignKey(Avaliacao, on_delete=models.CASCADE, related_name='pilulas')
-    titulo = models.CharField(max_length=200, verbose_name="Titulo da Pilula")
-    conteudo = models.TextField(verbose_name="Conteudo da Pilula", blank=True, null=True)
-    semana_num = models.PositiveIntegerField(verbose_name="Numero da semana", null=True, blank=True)
+    titulo = models.CharField(max_length=200, verbose_name="Título da Pílula")
+    conteudo = models.TextField(verbose_name="Conteúdo da Pílula", blank=True, null=True)
+    semana_num = models.PositiveIntegerField(verbose_name="Número da semana", null=True, blank=True)
     data_geracao = models.DateTimeField(auto_now_add=True)
     data_envio = models.DateTimeField(null=True, blank=True, verbose_name="Data de envio")
 
@@ -1156,8 +1276,8 @@ class Pilula(models.Model):
 
     class Meta:
         ordering = ['avaliacao', 'semana_num', 'data_geracao']
-        verbose_name = "Pilula de Conhecimento"
-        verbose_name_plural = "Pilulas de Conhecimento"
+        verbose_name = "Pílula de Conhecimento"
+        verbose_name_plural = "Pílulas de Conhecimento"
 
     @property
     def data_inicio_envio(self):
@@ -1178,7 +1298,7 @@ class Pilula(models.Model):
     def semana_ord(self):
         if not self.semana_num:
             return None
-        return f"{self.semana_num}a"
+        return f"{self.semana_num}ª"
 
     def marcar_enviada(self):
         self.status = 'enviada'
@@ -1189,7 +1309,6 @@ class Pilula(models.Model):
         if self.semana_ord:
             return f"{self.semana_ord} semana - {self.titulo} ({self.status})"
         return f"{self.titulo} ({self.status})"
-
 
 ========== .\avaliacoes-service\avaliacoes\serializers.py ==========
 
@@ -1237,6 +1356,113 @@ class PilulaSerializer(serializers.ModelSerializer):
         return f"Gestante {obj.avaliacao.gestante}"
 
 
+========== .\avaliacoes-service\avaliacoes\services.py ==========
+
+import json
+import logging
+from datetime import date
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
+
+from django.conf import settings
+
+
+logger = logging.getLogger(__name__)
+
+EXT_PESO = "https://integrai.ufma.br/fhir/StructureDefinition/gestante-peso-pre"
+EXT_ALTURA = "https://integrai.ufma.br/fhir/StructureDefinition/gestante-altura"
+
+QUESTIONARIO_FIELDS = [
+    "corrimento_vaginal",
+    "periodontite_carie",
+    "hipertensao_gestacao",
+    "diabetes_gestacao",
+    "estresse_gestacao",
+    "consumo_bebidas_adocadas",
+    "historico_familiar_alergia",
+    "consumo_ultraprocessados",
+    "consumo_alcool",
+    "fumante_gestacao",
+]
+
+
+def calcular_e_salvar_risco(avaliacao, access_token=None):
+    payload = _montar_payload_predicao(avaliacao, access_token=access_token)
+    resultado = _chamar_api_predicao(payload)
+    avaliacao.resultado_integralidade_saude = resultado
+    avaliacao.save(update_fields=["resultado_integralidade_saude"])
+    return resultado
+
+
+def _montar_payload_predicao(avaliacao, access_token=None):
+    patient = _buscar_patient(avaliacao.gestante, access_token=access_token)
+    idade = _calcular_idade(patient.get("birthDate"))
+    imc = _calcular_imc(patient)
+
+    if idade is None or imc is None:
+        raise ValueError("Patient sem dados suficientes para calcular idade gestante e IMC pre-gestacional.")
+
+    payload = {field: bool(getattr(avaliacao, field)) for field in QUESTIONARIO_FIELDS}
+    payload["imc_pre_gestacional"] = imc
+    payload["idade_gestante"] = idade
+    return payload
+
+
+def _buscar_patient(gestante_id, access_token=None):
+    url = f"{settings.GESTANTES_SERVICE_URL.rstrip('/')}/fhir/Patient/{gestante_id}"
+    headers = {"Authorization": f"Bearer {access_token}"} if access_token else None
+    data = _request_json("GET", url, headers=headers)
+    if not data or data.get("resourceType") == "OperationOutcome":
+        raise ValueError(f"Gestante {gestante_id} nao encontrada no gestantes-service.")
+    return data
+
+
+def _chamar_api_predicao(payload):
+    return _request_json("POST", settings.R_API_URL, payload)
+
+
+def _request_json(method, url, payload=None, headers=None):
+    body = json.dumps(payload).encode("utf-8") if payload is not None else None
+    request_headers = {"Content-Type": "application/json"}
+    if headers:
+        request_headers.update(headers)
+    request = Request(
+        url,
+        data=body,
+        method=method,
+        headers=request_headers,
+    )
+    try:
+        with urlopen(request, timeout=10) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+        logger.exception("Erro ao chamar %s %s", method, url)
+        raise RuntimeError(f"Erro ao chamar {url}: {exc}") from exc
+
+
+def _calcular_idade(data_nascimento):
+    if not data_nascimento:
+        return None
+    nascimento = date.fromisoformat(data_nascimento)
+    hoje = date.today()
+    return hoje.year - nascimento.year - ((hoje.month, hoje.day) < (nascimento.month, nascimento.day))
+
+
+def _calcular_imc(patient):
+    peso = _fhir_extension(patient, EXT_PESO, "valueInteger")
+    altura = _fhir_extension(patient, EXT_ALTURA, "valueDecimal")
+    if not peso or not altura:
+        return None
+    return round(float(peso) / (float(altura) ** 2), 2)
+
+
+def _fhir_extension(patient, url, value_key):
+    for extension in patient.get("extension", []) or []:
+        if extension.get("url") == url:
+            return extension.get(value_key)
+    return None
+
+
 ========== .\avaliacoes-service\avaliacoes\urls.py ==========
 
 from django.urls import path, include
@@ -1257,23 +1483,43 @@ urlpatterns = [
 
 from rest_framework import viewsets, permissions
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from .models import Avaliacao, Pilula
 from .serializers import AvaliacaoSerializer, PilulaSerializer
+from .authorization import authorized_gestante_ids, can_access_gestante
 
 
 class AvaliacaoViewSet(viewsets.ModelViewSet):
-    queryset = Avaliacao.objects.all()
+    queryset = Avaliacao.objects.none()
     serializer_class = AvaliacaoSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
     filterset_fields = ['gestante', 'status_processamento_llm', 'status_processamento_pills']
+
+    def get_queryset(self):
+        return Avaliacao.objects.filter(gestante__in=authorized_gestante_ids(self.request.auth))
+
+    def perform_create(self, serializer):
+        gestante_id = serializer.validated_data.get('gestante')
+        if not can_access_gestante(gestante_id, self.request.auth):
+            raise PermissionDenied("Access denied")
+        serializer.save()
 
 
 class PilulaViewSet(viewsets.ModelViewSet):
-    queryset = Pilula.objects.all()
+    queryset = Pilula.objects.none()
     serializer_class = PilulaSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
     filterset_fields = ['avaliacao', 'status']
+
+    def get_queryset(self):
+        return Pilula.objects.filter(avaliacao__gestante__in=authorized_gestante_ids(self.request.auth))
+
+    def perform_create(self, serializer):
+        avaliacao = serializer.validated_data.get('avaliacao')
+        if avaliacao and not can_access_gestante(avaliacao.gestante, self.request.auth):
+            raise PermissionDenied("Access denied")
+        serializer.save()
 
 
 @api_view(['GET'])
@@ -1288,150 +1534,293 @@ def health(request):
 Serializers FHIR para o Avaliacoes Service.
 Converte entre modelos Django e recursos FHIR.
 """
-from fhir.resources.observation import Observation
+import json
+
 from fhir.resources.questionnaire import Questionnaire
 from fhir.resources.questionnaireresponse import QuestionnaireResponse
-from fhir.resources.coding import Coding
-from fhir.resources.codeableconcept import CodeableConcept
-from fhir.resources.reference import Reference
 from rest_framework import serializers
 
 
+FHIR_SYSTEM = "https://integrai.ufma.br/fhir/CodeSystem/avaliacao-gestacional"
+OBSERVATION_CODE = "avaliacao-gestacional"
+EXT_RESULTADO = "https://integrai.ufma.br/fhir/StructureDefinition/avaliacao-resultado-integralidade-saude"
+EXT_STATUS_LLM = "https://integrai.ufma.br/fhir/StructureDefinition/avaliacao-status-processamento-llm"
+EXT_STATUS_PILLS = "https://integrai.ufma.br/fhir/StructureDefinition/avaliacao-status-processamento-pills"
+EXT_LLM_SINTESE = "https://integrai.ufma.br/fhir/StructureDefinition/avaliacao-llm-sintese"
+
+COMPONENTS = {
+    "peso_atual": {
+        "display": "Peso atual",
+        "value": "valueQuantity",
+        "unit": "kg",
+        "code": "kg",
+    },
+    "idade_gestacional": {
+        "display": "Idade gestacional em semanas",
+        "value": "valueInteger",
+    },
+    "consultas_prenatal": {
+        "display": "Quantidade de consultas pre-natal",
+        "value": "valueInteger",
+    },
+    "corrimento_vaginal": {
+        "display": "Corrimento vaginal frequente",
+        "value": "valueBoolean",
+    },
+    "periodontite_carie": {
+        "display": "Carie e/ou periodontite",
+        "value": "valueBoolean",
+    },
+    "hipertensao_gestacao": {
+        "display": "Hipertensao na gestacao",
+        "value": "valueBoolean",
+    },
+    "diabetes_gestacao": {
+        "display": "Diabetes na gestacao",
+        "value": "valueBoolean",
+    },
+    "estresse_gestacao": {
+        "display": "Estresse durante gestacao",
+        "value": "valueBoolean",
+    },
+    "historico_familiar_alergia": {
+        "display": "Historico familiar de alergia",
+        "value": "valueBoolean",
+    },
+    "consumo_bebidas_adocadas": {
+        "display": "Consumo de bebidas adocadas",
+        "value": "valueBoolean",
+    },
+    "consumo_ultraprocessados": {
+        "display": "Consumo de ultraprocessados",
+        "value": "valueBoolean",
+    },
+    "consumo_alcool": {
+        "display": "Consumo de alcool",
+        "value": "valueBoolean",
+    },
+    "fumante_gestacao": {
+        "display": "Fumante na gestacao",
+        "value": "valueBoolean",
+    },
+}
+
+
 class FHIRObservationSerializer(serializers.Serializer):
-    """Serializer para converter entre Observation (Avaliação) e modelo Django."""
-    
-    fhir_id = serializers.CharField(read_only=True, source='id')
-    status = serializers.ChoiceField(choices=['registered', 'preliminary', 'final', 'amended', 'corrected'])
+    """Serializer para converter entre Observation (Avaliacao) e modelo Django."""
+
+    fhir_id = serializers.CharField(read_only=True, source="id")
+    resourceType = serializers.CharField(required=False)
+    status = serializers.ChoiceField(
+        choices=["registered", "preliminary", "final", "amended", "corrected"],
+        required=False,
+    )
     category = serializers.ListField(child=serializers.DictField(), required=False)
     code = serializers.DictField(required=False)
     subject = serializers.DictField(required=False)
-    effective_date_time = serializers.DateTimeField(required=False)
+    effectiveDateTime = serializers.DateTimeField(required=False)
     issued = serializers.DateTimeField(required=False)
     performer = serializers.ListField(child=serializers.DictField(), required=False)
     value = serializers.DictField(required=False)
     interpretation = serializers.ListField(child=serializers.DictField(), required=False)
     note = serializers.ListField(child=serializers.DictField(), required=False)
     component = serializers.ListField(child=serializers.DictField(), required=False)
-    
+    extension = serializers.ListField(child=serializers.DictField(), required=False)
+
     def to_fhir(self, instance):
         """Converte modelo Django Avaliacao para recurso FHIR Observation."""
-        observation = Observation(
-            id=str(instance.id),
-            status='final',
-            resource_type="Observation"
-        )
-        
-        # Código da avaliação
-        if hasattr(instance, 'tipo') and instance.tipo:
-            coding = Coding(
-                system="http://termino.hl7.org/CodeSystem/v3-ActCode",
-                code=instance.tipo,
-                display=str(instance)
-            )
-            codeable = CodeableConcept(coding=[coding])
-            observation.code = codeable
-        
-        # Referência ao subject (gestante)
-        if hasattr(instance, 'gestante') and instance.gestante:
-            subject = Reference(
-                reference=f"Patient/{instance.gestante.id}",
-                display=str(instance.gestante)
-            )
-            observation.subject = subject
-        
-        # Data da avaliação
-        if hasattr(instance, 'data_criacao') and instance.data_criacao:
-            observation.effective_date_time = instance.data_criacao.isoformat()
-            observation.issued = instance.data_criacao.isoformat()
-        
+        observation = {
+            "resourceType": "Observation",
+            "id": str(instance.id),
+            "status": "final",
+            "category": [{
+                "coding": [{
+                    "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                    "code": "survey",
+                    "display": "Survey",
+                }]
+            }],
+            "code": {
+                "coding": [{
+                    "system": FHIR_SYSTEM,
+                    "code": OBSERVATION_CODE,
+                    "display": "Avaliacao gestacional",
+                }],
+                "text": "Avaliacao gestacional",
+            },
+            "subject": {"reference": f"Patient/{instance.gestante}"},
+            "component": [],
+            "extension": [
+                {"url": EXT_STATUS_LLM, "valueString": instance.status_processamento_llm},
+                {"url": EXT_STATUS_PILLS, "valueString": instance.status_processamento_pills},
+            ],
+        }
+
+        if instance.data_aplicacao:
+            observation["effectiveDateTime"] = instance.data_aplicacao.isoformat()
+            observation["issued"] = instance.data_aplicacao.isoformat()
+
+        if instance.resultado_integralidade_saude is not None:
+            observation["extension"].append({
+                "url": EXT_RESULTADO,
+                "valueString": json.dumps(instance.resultado_integralidade_saude),
+            })
+
+        if instance.llm_sintese:
+            observation["extension"].append({
+                "url": EXT_LLM_SINTESE,
+                "valueString": instance.llm_sintese,
+            })
+
+        for field, config in COMPONENTS.items():
+            value = getattr(instance, field, None)
+            if value is None:
+                continue
+
+            component = {
+                "code": {
+                    "coding": [{
+                        "system": FHIR_SYSTEM,
+                        "code": field,
+                        "display": config["display"],
+                    }],
+                    "text": config["display"],
+                }
+            }
+
+            if config["value"] == "valueQuantity":
+                component["valueQuantity"] = {
+                    "value": value,
+                    "unit": config["unit"],
+                    "system": "http://unitsofmeasure.org",
+                    "code": config["code"],
+                }
+            else:
+                component[config["value"]] = value
+
+            observation["component"].append(component)
+
         return observation
-    
+
     def to_django(self, fhir_data):
         """Converte recurso FHIR Observation para dados Django."""
-        # Extrair código
-        code_value = None
-        if fhir_data.get('code') and fhir_data['code'].get('coding'):
-            code_value = fhir_data['code']['coding'][0].get('code')
-        
-        # Extrair subject ID
+        data = {}
+
         subject_id = None
-        if fhir_data.get('subject') and fhir_data['subject'].get('reference'):
-            ref = fhir_data['subject']['reference']
-            if ref.startswith('Patient/'):
-                subject_id = ref.split('/')[1]
-        
-        return {
-            'tipo': code_value,
-            'gestante_id': subject_id,
-        }
+        if fhir_data.get("subject") and fhir_data["subject"].get("reference"):
+            ref = fhir_data["subject"]["reference"]
+            if ref.startswith("Patient/"):
+                subject_id = ref.split("/")[1]
+        if subject_id:
+            data["gestante"] = subject_id
+
+        if fhir_data.get("effectiveDateTime"):
+            data["data_aplicacao"] = fhir_data["effectiveDateTime"]
+
+        for component in fhir_data.get("component", []) or []:
+            field = self._component_code(component)
+            if field not in COMPONENTS:
+                continue
+            data[field] = self._component_value(component)
+
+        for extension in fhir_data.get("extension", []) or []:
+            url = extension.get("url")
+            if url == EXT_STATUS_LLM:
+                data["status_processamento_llm"] = extension.get("valueString")
+            elif url == EXT_STATUS_PILLS:
+                data["status_processamento_pills"] = extension.get("valueString")
+            elif url == EXT_LLM_SINTESE:
+                data["llm_sintese"] = extension.get("valueString")
+            elif url == EXT_RESULTADO and extension.get("valueString"):
+                data["resultado_integralidade_saude"] = json.loads(extension["valueString"])
+
+        return data
+
+    def _component_code(self, component):
+        for coding in component.get("code", {}).get("coding", []) or []:
+            if coding.get("system") == FHIR_SYSTEM:
+                return coding.get("code")
+        return None
+
+    def _component_value(self, component):
+        if "valueBoolean" in component:
+            return component["valueBoolean"]
+        if "valueInteger" in component:
+            return component["valueInteger"]
+        if "valueQuantity" in component:
+            return component["valueQuantity"].get("value")
+        if "valueString" in component:
+            return component["valueString"]
+        return None
 
 
 class FHIRQuestionnaireSerializer(serializers.Serializer):
-    """Serializer para Questionnaire (Pílulas de Conhecimento)."""
-    
-    fhir_id = serializers.CharField(read_only=True, source='id')
+    """Serializer para Questionnaire (Pilulas de Conhecimento)."""
+
+    fhir_id = serializers.CharField(read_only=True, source="id")
     identifier = serializers.ListField(child=serializers.DictField(), required=False)
     version = serializers.CharField(required=False)
     name = serializers.CharField(required=False)
     title = serializers.CharField(required=False)
-    status = serializers.ChoiceField(choices=['draft', 'active', 'retired', 'unknown'])
+    status = serializers.ChoiceField(choices=["draft", "active", "retired", "unknown"])
     date = serializers.DateTimeField(required=False)
     publisher = serializers.CharField(required=False)
     description = serializers.CharField(required=False)
     item = serializers.ListField(child=serializers.DictField(), required=False)
-    
+
     def to_fhir(self, instance):
-        """Converte modelo Pílula para recurso FHIR Questionnaire."""
+        """Converte modelo Pilula para recurso FHIR Questionnaire."""
         questionnaire = Questionnaire(
             id=str(instance.id),
-            status='active',
-            resource_type="Questionnaire"
+            status="active",
+            resource_type="Questionnaire",
         )
-        
-        if hasattr(instance, 'titulo'):
+
+        if hasattr(instance, "titulo"):
             questionnaire.title = instance.titulo
             questionnaire.name = instance.titulo
-        
-        if hasattr(instance, 'descricao'):
+
+        if hasattr(instance, "descricao"):
             questionnaire.description = instance.descricao
-        
+
         return questionnaire
-    
+
     def to_django(self, fhir_data):
         """Converte recurso FHIR Questionnaire para dados Django."""
         return {
-            'titulo': fhir_data.get('title'),
-            'descricao': fhir_data.get('description'),
+            "titulo": fhir_data.get("title"),
+            "descricao": fhir_data.get("description"),
         }
 
 
 class FHIRQuestionnaireResponseSerializer(serializers.Serializer):
-    """Serializer para QuestionnaireResponse (Respostas às Pílulas)."""
-    
-    fhir_id = serializers.CharField(read_only=True, source='id')
+    """Serializer para QuestionnaireResponse (Respostas as Pilulas)."""
+
+    fhir_id = serializers.CharField(read_only=True, source="id")
     questionnaire = serializers.DictField(required=False)
-    status = serializers.ChoiceField(choices=['in-progress', 'completed', 'amended', 'entered-in-error'])
+    status = serializers.ChoiceField(choices=["in-progress", "completed", "amended", "entered-in-error"])
     subject = serializers.DictField(required=False)
     authored = serializers.DateTimeField(required=False)
     author = serializers.DictField(required=False)
     item = serializers.ListField(child=serializers.DictField(), required=False)
-    
+
     def to_fhir(self, instance):
-        """Converte modelo RespostaPílula para recurso FHIR QuestionnaireResponse."""
+        """Converte modelo RespostaPilula para recurso FHIR QuestionnaireResponse."""
         qresponse = QuestionnaireResponse(
             id=str(instance.id),
-            status='completed',
-            resource_type="QuestionnaireResponse"
+            status="completed",
+            resource_type="QuestionnaireResponse",
         )
-        
-        if hasattr(instance, 'data_resposta'):
+
+        if hasattr(instance, "data_resposta"):
             qresponse.authored = instance.data_resposta.isoformat()
-        
-        return questionnaire
-    
+
+        return qresponse
+
     def to_django(self, fhir_data):
         """Converte recurso FHIR QuestionnaireResponse para dados Django."""
         return {}
+
 
 ========== .\avaliacoes-service\avaliacoes\fhir\urls.py ==========
 
@@ -1460,54 +1849,72 @@ urlpatterns = [
 Views FHIR para o Avaliacoes Service.
 Endpoints que expõem a API no padrão FHIR.
 """
+import logging
+
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import IsAuthenticated
+from avaliacoes.authorization import authorized_gestante_ids, can_access_gestante
 from .serializers import FHIRObservationSerializer, FHIRQuestionnaireSerializer, FHIRQuestionnaireResponseSerializer
 from avaliacoes.models import Avaliacao
+from avaliacoes.services import calcular_e_salvar_risco
+
+
+logger = logging.getLogger(__name__)
 
 
 class ObservationView(APIView):
     """Endpoint FHIR para Observation (Avaliações)."""
     
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
     
     def get(self, request):
         """Lista todas as Observations (GET /Observation)."""
         fhir_id = request.query_params.get('_id')
-        
+
         if fhir_id:
             try:
                 avaliacao = Avaliacao.objects.get(id=fhir_id)
                 serializer = FHIRObservationSerializer()
                 fhir_resource = serializer.to_fhir(avaliacao)
-                return Response(fhir_resource.dict(), status=status.HTTP_200_OK)
+                return Response(fhir_resource, status=status.HTTP_200_OK)
             except Avaliacao.DoesNotExist:
                 return Response({
                     'resourceType': 'OperationOutcome',
                     'issue': [{'severity': 'error', 'code': 'not-found'}]
                 }, status=status.HTTP_404_NOT_FOUND)
-        
-        # Lista todos
-        avaliacoes = Avaliacao.objects.all()
+
+        avaliacoes = Avaliacao.objects.filter(gestante__in=authorized_gestante_ids(request.auth))
+        subject = request.query_params.get('subject') or request.query_params.get('patient')
+        if subject:
+            gestante_id = subject.removeprefix('Patient/')
+            if not can_access_gestante(gestante_id, request.auth):
+                avaliacoes = Avaliacao.objects.none()
+            else:
+                avaliacoes = avaliacoes.filter(gestante=gestante_id)
+
+        count = request.query_params.get('_count')
+        if count and count.isdigit():
+            avaliacoes = avaliacoes[:int(count)]
+
         entries = []
-        
+
         for avaliacao in avaliacoes:
             serializer = FHIRObservationSerializer()
             fhir_resource = serializer.to_fhir(avaliacao)
             entries.append({
-                'resource': fhir_resource.dict(),
+                'resource': fhir_resource,
                 'fullUrl': f"Observation/{avaliacao.id}"
             })
-        
+
         bundle = {
             'resourceType': 'Bundle',
             'type': 'searchset',
             'total': len(entries),
             'entry': entries
         }
-        
+
         return Response(bundle, status=status.HTTP_200_OK)
     
     def post(self, request):
@@ -1516,11 +1923,20 @@ class ObservationView(APIView):
         
         if serializer.is_valid():
             data = serializer.to_django(request.data)
+            if not can_access_gestante(data.get('gestante'), request.auth):
+                return Response({
+                    'resourceType': 'OperationOutcome',
+                    'issue': [{'severity': 'error', 'code': 'forbidden', 'diagnostics': 'Access denied'}]
+                }, status=status.HTTP_403_FORBIDDEN)
             avaliacao = Avaliacao.objects.create(**data)
-            
+            try:
+                calcular_e_salvar_risco(avaliacao, access_token=request.auth)
+            except Exception:
+                logger.exception("Erro ao calcular risco da avaliacao %s", avaliacao.id)
+
             fhir_resource = serializer.to_fhir(avaliacao)
-            return Response(fhir_resource.dict(), status=status.HTTP_201_CREATED)
-        
+            return Response(fhir_resource, status=status.HTTP_201_CREATED)
+
         return Response({
             'resourceType': 'OperationOutcome',
             'issue': [{'severity': 'error', 'code': 'invalid', 'diagnostics': str(serializer.errors)}]
@@ -1530,15 +1946,20 @@ class ObservationView(APIView):
 class ObservationDetailView(APIView):
     """Endpoint FHIR para Observation específica."""
     
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
     
     def get(self, request, pk):
         """GET /Observation/{id}"""
         try:
             avaliacao = Avaliacao.objects.get(id=pk)
+            if not can_access_gestante(avaliacao.gestante, request.auth):
+                return Response({
+                    'resourceType': 'OperationOutcome',
+                    'issue': [{'severity': 'error', 'code': 'not-found'}]
+                }, status=status.HTTP_404_NOT_FOUND)
             serializer = FHIRObservationSerializer()
             fhir_resource = serializer.to_fhir(avaliacao)
-            return Response(fhir_resource.dict(), status=status.HTTP_200_OK)
+            return Response(fhir_resource, status=status.HTTP_200_OK)
         except Avaliacao.DoesNotExist:
             return Response({
                 'resourceType': 'OperationOutcome',
@@ -1549,23 +1970,33 @@ class ObservationDetailView(APIView):
         """PUT /Observation/{id}"""
         try:
             avaliacao = Avaliacao.objects.get(id=pk)
+            if not can_access_gestante(avaliacao.gestante, request.auth):
+                return Response({
+                    'resourceType': 'OperationOutcome',
+                    'issue': [{'severity': 'error', 'code': 'not-found'}]
+                }, status=status.HTTP_404_NOT_FOUND)
             serializer = FHIRObservationSerializer(data=request.data)
             
             if serializer.is_valid():
                 data = serializer.to_django(request.data)
+                if data.get('gestante') and not can_access_gestante(data.get('gestante'), request.auth):
+                    return Response({
+                        'resourceType': 'OperationOutcome',
+                        'issue': [{'severity': 'error', 'code': 'forbidden', 'diagnostics': 'Access denied'}]
+                    }, status=status.HTTP_403_FORBIDDEN)
                 for key, value in data.items():
                     if hasattr(avaliacao, key):
                         setattr(avaliacao, key, value)
                 avaliacao.save()
-                
+
                 fhir_resource = serializer.to_fhir(avaliacao)
-                return Response(fhir_resource.dict(), status=status.HTTP_200_OK)
-            
+                return Response(fhir_resource, status=status.HTTP_200_OK)
+
             return Response({
                 'resourceType': 'OperationOutcome',
                 'issue': [{'severity': 'error', 'code': 'invalid', 'diagnostics': str(serializer.errors)}]
             }, status=status.HTTP_400_BAD_REQUEST)
-            
+
         except Avaliacao.DoesNotExist:
             return Response({
                 'resourceType': 'OperationOutcome',
@@ -1576,6 +2007,11 @@ class ObservationDetailView(APIView):
         """DELETE /Observation/{id}"""
         try:
             avaliacao = Avaliacao.objects.get(id=pk)
+            if not can_access_gestante(avaliacao.gestante, request.auth):
+                return Response({
+                    'resourceType': 'OperationOutcome',
+                    'issue': [{'severity': 'error', 'code': 'not-found'}]
+                }, status=status.HTTP_404_NOT_FOUND)
             avaliacao.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
         except Avaliacao.DoesNotExist:
@@ -1588,7 +2024,7 @@ class ObservationDetailView(APIView):
 class QuestionnaireView(APIView):
     """Endpoint FHIR para Questionnaire (Pílulas de Conhecimento)."""
     
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
     
     def get(self, request):
         """Lista todos os Questionnaires."""
@@ -1603,7 +2039,7 @@ class QuestionnaireView(APIView):
 class QuestionnaireResponseView(APIView):
     """Endpoint FHIR para QuestionnaireResponse (Respostas às Pílulas)."""
     
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
     
     def get(self, request):
         """Lista todos os QuestionnaireResponses."""
@@ -1618,7 +2054,7 @@ class QuestionnaireResponseView(APIView):
 class MetadataView(APIView):
     """Capability Statement (metadata)."""
     
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
     
     def get(self, request):
         """GET /metadata - Capability Statement."""
@@ -1662,7 +2098,7 @@ class MetadataView(APIView):
 class FHIRRootView(APIView):
     """Raiz da API FHIR."""
     
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
     
     def get(self, request):
         """GET / - Servidor FHIR."""
@@ -1672,6 +2108,7 @@ class FHIRRootView(APIView):
             'fhirVersion': '4.0.1',
             'format': ['json']
         }, status=status.HTTP_200_OK)
+
 
 ========== .\avaliacoes-service\project\__init__.py ==========
 
@@ -1779,7 +2216,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # REST Framework
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.SessionAuthentication',
+        'avaliacoes.authentication.UsersServiceAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
@@ -1789,6 +2226,7 @@ REST_FRAMEWORK = {
 # Service URLs
 USERS_SERVICE_URL = os.getenv('USERS_SERVICE_URL', 'http://localhost:8000')
 GESTANTES_SERVICE_URL = os.getenv('GESTANTES_SERVICE_URL', 'http://localhost:8001')
+R_API_URL = os.getenv('R_API_URL', 'http://predition_api:8000/predict')
 
 # Redis Queue
 RQ_QUEUES = {
@@ -1798,6 +2236,7 @@ RQ_QUEUES = {
         'DB': 0,
     }
 }
+
 
 ========== .\avaliacoes-service\project\urls.py ==========
 
@@ -2082,7 +2521,7 @@ from django import forms
 
 import django_rq
 import re
-from datetime import datetime
+from datetime import date, datetime
 
 # DESABILITADO: Modelos migrados para microservice gestantes-service
 # from apps.gestantes.models import Gestante, Avaliacao
@@ -2150,7 +2589,11 @@ class GestanteForms(forms.Form):
         choices=VULNERABILIDADE_CHOICES,
         coerce=lambda value: value == 'True',
         widget=forms.Select(attrs={'class': 'form-select'}),
-        label='Com base nas suas visitas domiciliares, considera essa gestante em vulnerabilidade social?'
+        label='Com base nas suas visitas domiciliares, considera essa gestante em vulnerabilidade social?',
+        help_text=(
+            '<span class="fw-bold text-danger">⚠ NÃO PERGUNTAR À GESTANTE!</span><br>'
+            'Este campo deve ser marcado por você com base nas suas visitas domiciliares: '
+        ),
     )
     
     def clean_altura(self):
@@ -2191,6 +2634,19 @@ class GestanteForms(forms.Form):
             raise forms.ValidationError("O peso deve estar entre 30 e 200 kg.")
         return peso
 
+    def clean_data_nascimento(self):
+        data_nascimento = self.cleaned_data.get('data_nascimento')
+        if not data_nascimento:
+            return data_nascimento
+
+        hoje = date.today()
+        idade = hoje.year - data_nascimento.year - (
+            (hoje.month, hoje.day) < (data_nascimento.month, data_nascimento.day)
+        )
+        if idade < 10 or idade > 60:
+            raise forms.ValidationError("A idade deve estar entre 10 e 60 anos.")
+        return data_nascimento
+
 
 # DESABILITADO: Classes que usam modelos migrados para microservice
 # 
@@ -2224,6 +2680,7 @@ class GestanteForms(forms.Form):
 #             django_rq.enqueue(gerar_sintese_llm_task, instance.id)
 #             django_rq.enqueue(gerar_pilulas_task, instance.id)
 #         return instance
+
 
 ========== .\django_app\apps\gestantes\literals.py ==========
 
@@ -2422,11 +2879,55 @@ def _processar_resultado_avaliacao(resultado_json):
     return resultado_json or {}
 
 def obter_dados_risco(ultima_avaliacao, penultima_avaliacao):
-    """
-    DESABILITADO: Função que processa avaliações locais.
-    Use a API do microservice gestantes-service ao invés.
-    """
-    return {}, {}
+    resultado_atual = _processar_resultado_avaliacao(
+        (ultima_avaliacao or {}).get("resultado_integralidade_saude")
+    )
+    resultado_anterior = _processar_resultado_avaliacao(
+        (penultima_avaliacao or {}).get("resultado_integralidade_saude")
+    )
+
+    riscos = _montar_riscos(resultado_atual)
+    evolucao = _montar_evolucao(resultado_atual, resultado_anterior)
+    return riscos, evolucao
+
+
+def _montar_riscos(resultado):
+    if not resultado or resultado.get("prob_integralidade") is None:
+        return {}
+
+    fatores = [
+        NOMES_FATORES.get(fator, fator)
+        for fator in resultado.get("top_fatores", []) or []
+    ]
+
+    return {
+        "integralidade": {
+            "valor": round(float(resultado["prob_integralidade"]), 1),
+            "fatores": fatores,
+        },
+        "outros": [
+            {"nome": "Asma", "valor": round(float(resultado.get("prob_asma", 0)), 1)},
+            {"nome": "Obesidade", "valor": round(float(resultado.get("prob_obesidade", 0)), 1)},
+            {"nome": "Cárie", "valor": round(float(resultado.get("prob_carie", 0)), 1)},
+            {"nome": "Alergia", "valor": round(float(resultado.get("prob_alergia", 0)), 1)},
+        ],
+    }
+
+
+def _montar_evolucao(resultado_atual, resultado_anterior):
+    if not resultado_atual or not resultado_anterior:
+        return {}
+    atual = resultado_atual.get("prob_integralidade")
+    anterior = resultado_anterior.get("prob_integralidade")
+    if atual is None or anterior is None:
+        return {}
+    return {
+        "integralidade": {
+            "delta": round(float(atual) - float(anterior), 1),
+            "valor_atual": round(float(atual), 1),
+            "valor_anterior": round(float(anterior), 1),
+        }
+    }
 
 # DESABILITADO: Função que depende de modelo local Avaliacao
 # Todas as funções abaixo foram comentadas pois usam o modelo Avaliacao
@@ -2460,6 +2961,7 @@ def obter_dados_risco(ultima_avaliacao, penultima_avaliacao):
 #     Se houver fatores, envia para API e retorna o conteúdo gerado.
 #     """
 #     pass
+
 
 ========== .\django_app\apps\gestantes\tasks.py ==========
 
@@ -2753,7 +3255,7 @@ def add_attrs(field, args):
 ========== .\django_app\apps\gestantes\views\avaliacao_views.py ==========
 
 # ======================================
-# Importacoes principais do Django
+# Importações principais do Django
 # ======================================
 from django import forms
 from django.shortcuts import render, redirect
@@ -2762,7 +3264,7 @@ from django.urls import reverse
 from apps.usuarios.decorator import login_required_message
 
 # ======================================
-# Importacoes de apps locais
+# Importações de apps locais
 # ======================================
 from apps.gestantes import services
 from django.http import JsonResponse
@@ -2775,14 +3277,14 @@ from microservices.clients import avaliacoes_client
 
 class AvaliacaoForm(forms.Form):
     corrimento_vaginal = forms.BooleanField(required=False, label="Corrimento vaginal frequente?")
-    periodontite_carie = forms.BooleanField(required=False, label="Carie e/ou periodontite?")
-    hipertensao_gestacao = forms.BooleanField(required=False, label="Hipertensao na gestacao?")
-    diabetes_gestacao = forms.BooleanField(required=False, label="Diabetes na gestacao?")
-    estresse_gestacao = forms.BooleanField(required=False, label="Estresse durante gestacao?")
-    historico_familiar_alergia = forms.BooleanField(required=False, label="Historico familiar de alergia?")
-    consumo_bebidas_adocadas = forms.BooleanField(required=False, label="Consumo de bebidas adocadas?")
+    periodontite_carie = forms.BooleanField(required=False, label="Cárie e/ou periodontite?")
+    hipertensao_gestacao = forms.BooleanField(required=False, label="Hipertensão na gestação?")
+    diabetes_gestacao = forms.BooleanField(required=False, label="Diabetes na gestação?")
+    estresse_gestacao = forms.BooleanField(required=False, label="Estresse durante gestação?")
+    historico_familiar_alergia = forms.BooleanField(required=False, label="Histórico familiar de alergia?")
+    consumo_bebidas_adocadas = forms.BooleanField(required=False, label="Consumo de bebidas adoçadas?")
     consumo_ultraprocessados = forms.BooleanField(required=False, label="Consumo de ultraprocessados?")
-    consumo_alcool = forms.BooleanField(required=False, label="Consumo de alcool?")
+    consumo_alcool = forms.BooleanField(required=False, label="Consumo de álcool?")
     fumante_gestacao = forms.BooleanField(required=False, label="Fumante?")
 
 
@@ -2796,18 +3298,18 @@ def _listar_avaliacoes(gestante_id):
 
 
 # =========================================================
-# Funcao: Detalhes da Gestante
-# Mostra informacoes e evolucao de riscos
+# Função: Detalhes da Gestante
+# Mostra informações e evolução de riscos
 # =========================================================
 @login_required_message
 def gestante(request, gestante_id):
     if not request.user.is_authenticated:
-        messages.error(request, 'Usuario nao logado')
+        messages.error(request, 'Usuário não logado')
         return redirect('login')
 
     gestante = _get_gestante_fhir(gestante_id)
     if not gestante:
-        messages.error(request, "Gestante nao encontrada.")
+        messages.error(request, "Gestante não encontrada.")
         return redirect('index')
 
     avaliacoes = _listar_avaliacoes(gestante_id)[:2]
@@ -2815,7 +3317,7 @@ def gestante(request, gestante_id):
     ultima_avaliacao = avaliacoes[0] if len(avaliacoes) > 0 else None
     penultima_avaliacao = avaliacoes[1] if len(avaliacoes) > 1 else None
 
-    # Chama a camada de servico para fazer o trabalho sujo
+    # Chama a camada de serviço para fazer o trabalho sujo
     riscos, evolucao_riscos_dict = services.obter_dados_risco(
         ultima_avaliacao,
         penultima_avaliacao
@@ -2838,34 +3340,34 @@ def gestante(request, gestante_id):
 
 
 # =========================================================
-# Funcao: Avaliacao
-# Cria nova avaliacao associada a gestante
+# Função: Avaliação
+# Cria nova avaliação associada à gestante
 # =========================================================
 @login_required_message
 def avaliacao(request, gestante_id):
     gestante = _get_gestante_fhir(gestante_id)
     if not gestante:
-        messages.error(request, "Gestante nao encontrada.")
+        messages.error(request, "Gestante não encontrada.")
         return redirect('index')
 
     if not gestante.get('consentimento_ativo', True):
-        messages.error(request, "Nao e possivel avaliar uma gestante com consentimento revogado.")
+        messages.error(request, "Não é possível avaliar uma gestante com consentimento revogado.")
         return redirect('index')
 
-    # Checa API antes de mostrar o formulario
+    # 🚨 Checa API antes de mostrar o formulário
     if not predicao_api_esta_online():
-        messages.error(request, "O servico de predicao esta indisponivel no momento. Tente mais tarde")
+        messages.error(request, "O serviço de predição está indisponível no momento. Tente mais tarde")
         return redirect('gestante', gestante_id)
-
+    
     if request.method == 'POST':
         form = AvaliacaoForm(request.POST)
         if form.is_valid():
             payload = {"gestante": gestante_id, **form.cleaned_data}
             questionario = avaliacoes_client.create_avaliacao(payload)
             if questionario:
-                messages.success(request, "Avaliacao registrada com sucesso.")
+                messages.success(request, "Avaliação registrada com sucesso.")
                 return redirect(reverse('gestante', args=[gestante_id]))
-            messages.error(request, "Erro ao registrar avaliacao no avaliacoes-service.")
+            messages.error(request, "Erro ao registrar avaliação no avaliacoes-service.")
     else:
         form = AvaliacaoForm()
 
@@ -2879,7 +3381,7 @@ def avaliacao_status(request, gestante_id):
     ultima_avaliacao = next(iter(_listar_avaliacoes(gestante_id)), None)
 
     if not ultima_avaliacao:
-        return JsonResponse({"status": "NONE", "status_text": "Sem avaliacoes"})
+        return JsonResponse({"status": "NONE", "status_text": "Sem avaliações"})
 
     atributo_status = {
         "sintese": "status_processamento_llm",
@@ -2892,10 +3394,10 @@ def avaliacao_status(request, gestante_id):
     status = ultima_avaliacao.get(atributo_status)
 
     status_texts = {
-        "PENDING": "Em breve, a MarIA ira preparar tudo para voce.",
-        "PROCESSING": "A MarIA esta processando as informacoes da gestante.",
-        "COMPLETED": "A MarIA ja analisou os resultados!",
-        "FAILED": "A MarIA teve uma dificuldade ao processar a avaliacao. Tente novamente daqui a pouco."
+        "PENDING": "Em breve, a MarIA irá preparar tudo para você.",
+        "PROCESSING": "A MarIA está processando as informações da gestante.",
+        "COMPLETED": "A MarIA já analisou os resultados!",
+        "FAILED": "A MarIA teve uma dificuldade ao processar a avaliação. Tente novamente daqui a pouco."
     }
 
     return JsonResponse({
@@ -3073,10 +3575,11 @@ def chat(request):
 # ======================================
 # Importações principais do Django
 # ======================================
-from datetime import date
+from datetime import date, datetime
 
 from django.shortcuts import render, redirect
 from django.contrib import messages
+from django.core.files.storage import default_storage
 
 # ======================================
 # Importações de apps locais
@@ -3087,12 +3590,25 @@ from apps.usuarios.decorator import login_required_message
 # ======================================
 # Importações de microserviços
 # ======================================
-from microservices.clients import gestantes_client
+from microservices.clients import avaliacoes_client, gestantes_client
 
 EXT_PESO = "https://integrai.ufma.br/fhir/StructureDefinition/gestante-peso-pre"
 EXT_ALTURA = "https://integrai.ufma.br/fhir/StructureDefinition/gestante-altura"
 EXT_VULNERABILIDADE = "https://integrai.ufma.br/fhir/StructureDefinition/gestante-vulnerabilidade-social"
 EXT_USUARIO_ID = "https://integrai.ufma.br/fhir/StructureDefinition/gestante-usuario-id"
+
+
+class QuestionariosAdapter:
+    def __init__(self, avaliacoes):
+        self._avaliacoes = avaliacoes
+
+    def last(self):
+        return self._avaliacoes[0] if self._avaliacoes else None
+
+
+class FotoAdapter:
+    def __init__(self, url):
+        self.url = url
 
 
 def _fhir_extension(patient, url, value_key):
@@ -3130,6 +3646,59 @@ def _consentimento_ativo(gestante_id):
     return consentimentos[0].get("status") == "aceito"
 
 
+def _parse_datetime(value):
+    if not value or not isinstance(value, str):
+        return value
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return value
+
+
+def _listar_avaliacoes_gestante(gestante_id):
+    avaliacoes = avaliacoes_client.list_avaliacoes(params={"gestante": gestante_id})
+    avaliacoes = sorted(
+        avaliacoes,
+        key=lambda avaliacao: avaliacao.get("data_aplicacao") or "",
+        reverse=True,
+    )
+    for avaliacao in avaliacoes:
+        avaliacao["data_aplicacao"] = _parse_datetime(avaliacao.get("data_aplicacao"))
+    return avaliacoes
+
+
+def _adicionar_questionarios(gestantes):
+    for gestante in gestantes:
+        gestante["questionarios"] = QuestionariosAdapter(_listar_avaliacoes_gestante(gestante["id"]))
+    return gestantes
+
+
+def _fhir_photo_to_url(patient):
+    photos = patient.get("photo") or []
+    if not photos:
+        return None
+    photo = photos[0]
+    if photo.get("url"):
+        return photo["url"]
+    if photo.get("data"):
+        content_type = photo.get("contentType") or "image/jpeg"
+        return f"data:{content_type};base64,{photo['data']}"
+    return None
+
+
+def _photo_url_to_fhir_attachment(photo_url):
+    if not photo_url:
+        return None
+    return {"url": photo_url}
+
+
+def _uploaded_file_to_photo_url(uploaded_file):
+    if not uploaded_file:
+        return None
+    path = default_storage.save(f"gestantes/fotos/{uploaded_file.name}", uploaded_file)
+    return default_storage.url(path)
+
+
 def _patient_to_gestante(patient):
     nome = ""
     names = patient.get("name") or []
@@ -3152,17 +3721,21 @@ def _patient_to_gestante(patient):
 
     imc = round(float(peso) / (float(altura) ** 2), 2) if peso and altura else None
     gestante_id = int(patient["id"])
+    foto_url = _fhir_photo_to_url(patient)
 
     return {
         "id": gestante_id,
         "nome": nome,
+        "primeiro_nome": nome.split(" ", 1)[0] if nome else "",
+        "ultimo_nome": nome.split(" ", 1)[1] if " " in nome else "",
         "data_nascimento": data_nascimento,
         "peso": peso,
         "altura": altura,
         "telefone": telefone,
         "vulnerabilidade_social": bool(vulnerabilidade_social),
         "usuario_id": usuario_id,
-        "foto": None,
+        "foto": FotoAdapter(foto_url) if foto_url else None,
+        "foto_url": foto_url,
         "idade": _calcular_idade(data_nascimento),
         "imc": imc,
         "imc_classificacao": _classificar_imc(imc),
@@ -3171,7 +3744,7 @@ def _patient_to_gestante(patient):
     }
 
 
-def _gestante_form_to_fhir_patient(cleaned_data, usuario_id=None):
+def _gestante_form_to_fhir_patient(cleaned_data, usuario_id=None, existing_photo_url=None):
     extensions = [
         {"url": EXT_PESO, "valueInteger": cleaned_data["peso"]},
         {"url": EXT_ALTURA, "valueDecimal": cleaned_data["altura"]},
@@ -3190,6 +3763,12 @@ def _gestante_form_to_fhir_patient(cleaned_data, usuario_id=None):
     }
     if cleaned_data.get("telefone"):
         patient["telecom"] = [{"system": "phone", "value": cleaned_data["telefone"], "use": "mobile"}]
+
+    photo_url = _uploaded_file_to_photo_url(cleaned_data.get("foto")) or existing_photo_url
+    photo = _photo_url_to_fhir_attachment(photo_url)
+    if photo:
+        patient["photo"] = [photo]
+
     return patient
 
 
@@ -3201,7 +3780,8 @@ def _list_gestantes_fhir(usuario_id, nome=None):
     bundle = gestantes_client._request("GET", "/fhir/Patient", params=params)
     entries = (bundle or {}).get("entry", [])
     gestantes = [_patient_to_gestante(entry["resource"]) for entry in entries if entry.get("resource")]
-    return [gestante for gestante in gestantes if gestante.get("usuario_id") == usuario_id]
+    gestantes = [gestante for gestante in gestantes if gestante.get("usuario_id") == usuario_id]
+    return _adicionar_questionarios(gestantes)
 
 
 def _get_gestante_fhir(gestante_id):
@@ -3220,7 +3800,12 @@ def _create_gestante_fhir(cleaned_data, usuario_id):
 
 
 def _update_gestante_fhir(gestante_id, cleaned_data, usuario_id):
-    patient = _gestante_form_to_fhir_patient(cleaned_data, usuario_id=usuario_id)
+    current = _get_gestante_fhir(gestante_id) or {}
+    patient = _gestante_form_to_fhir_patient(
+        cleaned_data,
+        usuario_id=usuario_id,
+        existing_photo_url=current.get("foto_url"),
+    )
     updated = gestantes_client._request("PUT", f"/fhir/Patient/{gestante_id}", data=patient)
     if not updated or updated.get("resourceType") == "OperationOutcome":
         return None
@@ -3315,7 +3900,7 @@ def nova_gestante(request):
                 messages.success(request, 'Nova gestante cadastrada!')
                 return redirect('index')
             else:
-                messages.error(request, 'Erro ao cadastrar gestante.')
+                messages.error(request, gestantes_client.last_error or 'Erro ao cadastrar gestante.')
 
     return render(request, 'gestantes/crud/acolher.html', {'form': form})
 
@@ -3346,7 +3931,7 @@ def editar_gestante(request, gestante_id):
                 messages.success(request, 'Gestante editada com sucesso')
                 return redirect('index')
             else:
-                messages.error(request, 'Erro ao editar gestante.')
+                messages.error(request, gestantes_client.last_error or 'Erro ao editar gestante.')
 
     # MUDANÇA AQUI: Passe o objeto 'gestante' completo para o template
     context = {
@@ -3659,7 +4244,7 @@ def login_required_message(function=None, redirect_field_name='next', login_url=
         @wraps(view_func)
         def _wrapped_view(request, *args, **kwargs):
             if not request.user.is_authenticated:
-                messages.warning(request, 'Voce precisa estar logado para acessar esta pagina.')
+                messages.warning(request, 'Você precisa estar logado para acessar esta página.')
                 return redirect(login_url)
             return view_func(request, *args, **kwargs)
 
@@ -4145,6 +4730,7 @@ from django.utils.functional import SimpleLazyObject
 
 from apps.usuarios.backends import MicroserviceUser
 from apps.usuarios.services import get_cached_microservice_data, refresh_cached_user
+from microservices.clients import reset_request_auth_token, set_request_auth_token
 
 
 def get_microservice_user(request):
@@ -4183,9 +4769,13 @@ class MicroserviceUserMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
+        token_context = set_request_auth_token(request.session.get('microservice_token'))
         if request.session.get('microservice_authenticated'):
             request.user = SimpleLazyObject(lambda: get_microservice_user(request))
-        return self.get_response(request)
+        try:
+            return self.get_response(request)
+        finally:
+            reset_request_auth_token(token_context)
 
 
 ========== .\django_app\apps\usuarios\models.py ==========
@@ -4690,7 +5280,7 @@ def cadastro(request):
             success, result = create_user_with_profile(user_data, profile_data)
 
             if success:
-                messages.success(request, 'Cadastro efetuado com sucesso! Faca login.')
+                messages.success(request, 'Cadastro efetuado com sucesso! Faça login.')
                 return redirect('login')
 
             messages.error(request, f'Erro ao cadastrar: {result}')
@@ -4877,9 +5467,46 @@ O serviço de avaliações utiliza Redis + RQ para processamento assíncrono de:
 """
 Cliente para comunicação entre microservices.
 """
+import json
 import os
 import requests
+from contextvars import ContextVar
 from typing import Optional, Dict, Any, List
+
+
+_request_auth_token = ContextVar("microservice_auth_token", default=None)
+
+
+def set_request_auth_token(token: Optional[str]):
+    return _request_auth_token.set(token)
+
+
+def reset_request_auth_token(token_context):
+    _request_auth_token.reset(token_context)
+
+
+FHIR_SYSTEM = "https://integrai.ufma.br/fhir/CodeSystem/avaliacao-gestacional"
+OBSERVATION_CODE = "avaliacao-gestacional"
+EXT_RESULTADO = "https://integrai.ufma.br/fhir/StructureDefinition/avaliacao-resultado-integralidade-saude"
+EXT_STATUS_LLM = "https://integrai.ufma.br/fhir/StructureDefinition/avaliacao-status-processamento-llm"
+EXT_STATUS_PILLS = "https://integrai.ufma.br/fhir/StructureDefinition/avaliacao-status-processamento-pills"
+EXT_LLM_SINTESE = "https://integrai.ufma.br/fhir/StructureDefinition/avaliacao-llm-sintese"
+
+AVALIACAO_COMPONENTS = {
+    "peso_atual": {"display": "Peso atual", "value": "valueQuantity", "unit": "kg", "code": "kg"},
+    "idade_gestacional": {"display": "Idade gestacional em semanas", "value": "valueInteger"},
+    "consultas_prenatal": {"display": "Quantidade de consultas pre-natal", "value": "valueInteger"},
+    "corrimento_vaginal": {"display": "Corrimento vaginal frequente", "value": "valueBoolean"},
+    "periodontite_carie": {"display": "Carie e/ou periodontite", "value": "valueBoolean"},
+    "hipertensao_gestacao": {"display": "Hipertensao na gestacao", "value": "valueBoolean"},
+    "diabetes_gestacao": {"display": "Diabetes na gestacao", "value": "valueBoolean"},
+    "estresse_gestacao": {"display": "Estresse durante gestacao", "value": "valueBoolean"},
+    "historico_familiar_alergia": {"display": "Historico familiar de alergia", "value": "valueBoolean"},
+    "consumo_bebidas_adocadas": {"display": "Consumo de bebidas adocadas", "value": "valueBoolean"},
+    "consumo_ultraprocessados": {"display": "Consumo de ultraprocessados", "value": "valueBoolean"},
+    "consumo_alcool": {"display": "Consumo de alcool", "value": "valueBoolean"},
+    "fumante_gestacao": {"display": "Fumante na gestacao", "value": "valueBoolean"},
+}
 
 
 class BaseServiceClient:
@@ -4889,19 +5516,49 @@ class BaseServiceClient:
         self.base_url = service_url
         self.session = requests.Session()
         self.session.headers.update({'Content-Type': 'application/json'})
+        self.last_error = None
 
     def set_bearer_token(self, token: str) -> None:
         self.session.headers.update({'Authorization': f'Bearer {token}'})
     
     def _request(self, method: str, endpoint: str, data: Optional[Dict] = None, params: Optional[Dict] = None) -> Optional[Dict]:
         url = f"{self.base_url}{endpoint}"
+        self.last_error = None
         try:
-            response = self.session.request(method, url, json=data, params=params)
+            headers = None
+            token = _request_auth_token.get()
+            if token:
+                headers = {"Authorization": f"Bearer {token}"}
+            response = self.session.request(method, url, json=data, params=params, headers=headers)
             response.raise_for_status()
             return response.json() if response.content else None
         except requests.exceptions.RequestException as e:
+            self.last_error = self._extract_error(e)
             print(f"Erro na requisição {method} {url}: {e}")
             return None
+
+    def _extract_error(self, error: requests.exceptions.RequestException) -> Optional[str]:
+        response = getattr(error, "response", None)
+        if response is None or not response.content:
+            return None
+        try:
+            payload = response.json()
+        except ValueError:
+            return response.text
+
+        if payload.get("resourceType") == "OperationOutcome":
+            issues = payload.get("issue") or []
+            if issues:
+                return issues[0].get("diagnostics")
+
+        detail = payload.get("detail")
+        if isinstance(detail, list) and detail:
+            first = detail[0]
+            if isinstance(first, dict):
+                return first.get("msg")
+        if isinstance(detail, str):
+            return detail
+        return None
 
 
 class UsersServiceClient(BaseServiceClient):
@@ -4928,9 +5585,10 @@ class UsersServiceClient(BaseServiceClient):
                 self.set_bearer_token(access_token)
             return token_data
         except requests.exceptions.RequestException as e:
-            print(f"Erro na requisiÃ§Ã£o POST {self.base_url}/api/v1/auth/token: {e}")
+            self.last_error = self._extract_error(e)
+            print(f"Erro na requisição POST {self.base_url}/api/v1/auth/token: {e}")
             return None
-    
+
     def get_usuario(self, usuario_id: int) -> Optional[Dict]:
         return self._request('GET', f'/api/v1/usuarios/{usuario_id}')
     
@@ -4994,14 +5652,23 @@ class AvaliacoesServiceClient(BaseServiceClient):
         super().__init__(url)
     
     def get_avaliacao(self, avaliacao_id: int) -> Optional[Dict]:
-        return self._request('GET', f'/api/avaliacoes/{avaliacao_id}/')
+        observation = self._request('GET', f'/fhir/Observation/{avaliacao_id}')
+        return self._observation_to_avaliacao(observation) if observation else None
     
     def list_avaliacoes(self, params: Optional[Dict] = None) -> List[Dict]:
-        result = self._request('GET', '/api/avaliacoes/', params=params)
-        return result if result else []
+        fhir_params = self._avaliacao_params_to_fhir(params or {})
+        bundle = self._request('GET', '/fhir/Observation', params=fhir_params)
+        entries = (bundle or {}).get('entry', [])
+        return [
+            self._observation_to_avaliacao(entry.get('resource'))
+            for entry in entries
+            if entry.get('resource')
+        ]
     
     def create_avaliacao(self, data: Dict) -> Optional[Dict]:
-        return self._request('POST', '/api/avaliacoes/', data=data)
+        observation = self._avaliacao_to_observation(data)
+        created = self._request('POST', '/fhir/Observation', data=observation)
+        return self._observation_to_avaliacao(created) if created else None
     
     def get_pilula(self, pilula_id: int) -> Optional[Dict]:
         return self._request('GET', f'/api/pilulas/{pilula_id}/')
@@ -5012,6 +5679,146 @@ class AvaliacoesServiceClient(BaseServiceClient):
     
     def marcar_pilula_enviada(self, pilula_id: int) -> Optional[Dict]:
         return self._request('POST', f'/api/pilulas/{pilula_id}/marcar_enviada/')
+
+
+    def _avaliacao_params_to_fhir(self, params: Dict) -> Dict:
+        fhir_params = {}
+        if params.get('gestante'):
+            fhir_params['subject'] = f"Patient/{params['gestante']}"
+        if params.get('_count'):
+            fhir_params['_count'] = params['_count']
+        return fhir_params
+
+    def _avaliacao_to_observation(self, data: Dict) -> Dict:
+        observation = {
+            "resourceType": "Observation",
+            "status": "final",
+            "category": [{
+                "coding": [{
+                    "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                    "code": "survey",
+                    "display": "Survey",
+                }]
+            }],
+            "code": {
+                "coding": [{
+                    "system": FHIR_SYSTEM,
+                    "code": OBSERVATION_CODE,
+                    "display": "Avaliacao gestacional",
+                }],
+                "text": "Avaliacao gestacional",
+            },
+            "subject": {"reference": f"Patient/{data['gestante']}"},
+            "component": [],
+        }
+
+        extensions = []
+        if data.get("status_processamento_llm"):
+            extensions.append({"url": EXT_STATUS_LLM, "valueString": data["status_processamento_llm"]})
+        if data.get("status_processamento_pills"):
+            extensions.append({"url": EXT_STATUS_PILLS, "valueString": data["status_processamento_pills"]})
+        if data.get("llm_sintese"):
+            extensions.append({"url": EXT_LLM_SINTESE, "valueString": data["llm_sintese"]})
+        if data.get("resultado_integralidade_saude") is not None:
+            extensions.append({
+                "url": EXT_RESULTADO,
+                "valueString": json.dumps(data["resultado_integralidade_saude"]),
+            })
+        if extensions:
+            observation["extension"] = extensions
+
+        for field, config in AVALIACAO_COMPONENTS.items():
+            if field not in data or data[field] is None:
+                continue
+
+            component = {
+                "code": {
+                    "coding": [{
+                        "system": FHIR_SYSTEM,
+                        "code": field,
+                        "display": config["display"],
+                    }],
+                    "text": config["display"],
+                }
+            }
+            if config["value"] == "valueQuantity":
+                component["valueQuantity"] = {
+                    "value": data[field],
+                    "unit": config["unit"],
+                    "system": "http://unitsofmeasure.org",
+                    "code": config["code"],
+                }
+            else:
+                component[config["value"]] = data[field]
+            observation["component"].append(component)
+
+        return observation
+
+    def _observation_to_avaliacao(self, observation: Optional[Dict]) -> Optional[Dict]:
+        if not observation or observation.get("resourceType") == "OperationOutcome":
+            return None
+
+        avaliacao = {
+            "id": self._as_int(observation.get("id")),
+            "gestante": self._subject_id(observation),
+            "data_aplicacao": observation.get("effectiveDateTime") or observation.get("issued"),
+            "resultado_integralidade_saude": None,
+            "status_processamento_llm": "PENDING",
+            "status_processamento_pills": "PENDING",
+            "llm_sintese": None,
+        }
+
+        for component in observation.get("component", []) or []:
+            field = self._component_code(component)
+            if field in AVALIACAO_COMPONENTS:
+                avaliacao[field] = self._component_value(component)
+
+        for extension in observation.get("extension", []) or []:
+            url = extension.get("url")
+            if url == EXT_STATUS_LLM:
+                avaliacao["status_processamento_llm"] = extension.get("valueString") or "PENDING"
+            elif url == EXT_STATUS_PILLS:
+                avaliacao["status_processamento_pills"] = extension.get("valueString") or "PENDING"
+            elif url == EXT_LLM_SINTESE:
+                avaliacao["llm_sintese"] = extension.get("valueString")
+            elif url == EXT_RESULTADO and extension.get("valueString"):
+                try:
+                    avaliacao["resultado_integralidade_saude"] = json.loads(extension["valueString"])
+                except json.JSONDecodeError:
+                    avaliacao["resultado_integralidade_saude"] = None
+
+        return avaliacao
+
+    def _subject_id(self, observation: Dict) -> Optional[int]:
+        reference = (observation.get("subject") or {}).get("reference")
+        if not reference:
+            return None
+        return self._as_int(reference.removeprefix("Patient/"))
+
+    def _component_code(self, component: Dict) -> Optional[str]:
+        for coding in component.get("code", {}).get("coding", []) or []:
+            if coding.get("system") == FHIR_SYSTEM:
+                return coding.get("code")
+        return None
+
+    def _component_value(self, component: Dict) -> Any:
+        if "valueBoolean" in component:
+            return component["valueBoolean"]
+        if "valueInteger" in component:
+            return component["valueInteger"]
+        if "valueQuantity" in component:
+            return (component["valueQuantity"] or {}).get("value")
+        if "valueString" in component:
+            return component["valueString"]
+        return None
+
+    def _as_int(self, value: Any) -> Optional[int]:
+        if value in (None, ""):
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
 
 
 # Instâncias globais
@@ -5300,11 +6107,10 @@ LOGGING = {
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
-STATIC_URL = '/static/'
+STATIC_URL = 'static/'
 
 STATICFILES_DIRS = [
-    os.path.join(BASE_DIR, 'setup/static'),
-    # REMOVIDO: os.path.join(BASE_DIR, 'static') — conflita com STATIC_ROOT
+        os.path.join(BASE_DIR, 'setup/static')
 ]
 
 STATIC_ROOT = os.path.join(BASE_DIR, 'static')
@@ -39424,6 +40230,74 @@ async function configurarCompressaoFoto_(inputSelector, previewSelector) {
     });
 }
 
+// Versão usada pelos formulários atuais. Mantém a foto original se a compressão falhar.
+async function configurarCompressaoFoto(inputSelector, previewSelector) {
+    const inputFoto = document.querySelector(inputSelector);
+    const preview = document.querySelector(previewSelector);
+
+    if (!inputFoto) return;
+
+    inputFoto.addEventListener("change", async (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const mostrarPreview = (arquivo) => {
+            if (!preview || !arquivo) return;
+            if (preview.dataset.objectUrl) {
+                URL.revokeObjectURL(preview.dataset.objectUrl);
+            }
+            const objectUrl = URL.createObjectURL(arquivo);
+            preview.dataset.objectUrl = objectUrl;
+            preview.src = objectUrl;
+            preview.style.display = "block";
+        };
+
+        const maxAllowedMB = 10;
+        const fileMB = file.size / (1024 * 1024);
+        if (fileMB > maxAllowedMB) {
+            alert(`A imagem é muito grande (${fileMB.toFixed(2)} MB). Tente uma menor que ${maxAllowedMB} MB.`);
+            inputFoto.value = "";
+            return;
+        }
+
+        if (typeof imageCompression !== "function") {
+            console.warn("Biblioteca de compressão indisponível. Enviando foto original.");
+            mostrarPreview(file);
+            return;
+        }
+
+        const options = {
+            maxSizeMB: 0.5,
+            maxWidthOrHeight: 1024,
+            useWebWorker: true,
+            maxIteration: 8,
+            initialQuality: 0.6,
+            exifOrientation: true,
+            fileType: "image/jpeg",
+        };
+
+        try {
+            const compressedBlob = await imageCompression(file, options);
+            const originalName = file.name.includes(".")
+                ? file.name.split(".").slice(0, -1).join(".")
+                : file.name || "foto";
+            const compressedFile = new File([compressedBlob], `${originalName}.jpg`, {
+                type: compressedBlob.type,
+                lastModified: Date.now(),
+            });
+
+            const dataTransfer = new DataTransfer();
+            dataTransfer.items.add(compressedFile);
+            inputFoto.files = dataTransfer.files;
+            mostrarPreview(compressedFile);
+        } catch (error) {
+            console.error("Erro ao comprimir imagem:", error);
+            console.warn("Falha na compressão. Mantendo a foto original para envio.");
+            mostrarPreview(file);
+        }
+    });
+}
+
 
 ========== .\django_app\static\js\toggleView.js ==========
 
@@ -40859,10 +41733,10 @@ input:checked + .slider:before {
     
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="{% static 'styles/global_v3.css' %}">
+    <link rel="stylesheet" href="{% static '/styles/global_v3.css' %}">
 
     <!-- Font Awesome 6 (via CDN) -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" integrity="sha512-yQtkbz74y4FUR6KDLXGpKmhQZh+R0V44CMWvj3JZ3NrfuTtMTZIsVJ9M0Fz7KlEIb3WyIRLrjBE6aa12m19a9g==" crossorigin="anonymous" referrerpolicy="no-referrer" />
 
     <link rel="icon" href="{% static 'assets/imagens/favicon.png' %}" type="image/png">
 
@@ -42914,9 +43788,7 @@ document.getElementById('modalConfirmacaoConsentimento').addEventListener('hidde
                                 <label class="switch">
                                     <input type="checkbox" 
                                            name="revogar" 
-                                           {% if gestante.consentimento_ativo %}
-                                                checked
-                                           {% endif %} 
+                                           {% if gestante.consentimento_ativo %}checked{% endif %} 
                                            onchange="abrirModalConfirmacao({{ gestante.id }}, this)">
                                     <span class="slider round"></span>
                                 </label>
@@ -42935,7 +43807,7 @@ document.getElementById('modalConfirmacaoConsentimento').addEventListener('hidde
                     <div class="card-modern-right">
                         
                             <h5 class="card-title">
-                                {{ gestante.nome }}
+                                {{ gestante.primeiro_nome }} {{ gestante.ultimo_nome }}
                                 <i class="fa-solid fa-chevron-right ms-1 d-md-none" style="font-size: .9em;"></i>
                             </h5>
                             <span> <strong>Idade:</strong> {{ gestante.idade }} </span>
@@ -42943,15 +43815,19 @@ document.getElementById('modalConfirmacaoConsentimento').addEventListener('hidde
                             
                             {% if gestante.imc %}
                                 <strong>| IMC:</strong>
-                                <span class="text-muted">
-                                     {{ gestante.imc }} ({{ gestante.imc_classificacao }})
+                                <span class="{{ gestante.imc_cor }}">
+                                     {{ gestante.imc }}
                                 </span>
                             {% else %}
                                 <span class="text-muted">IMC indisponível</span>
                             {% endif %}
                             
                             </p>
-                            <p class="text-muted"><small>Última avaliação: Não disponível</small></p>
+                            {% if gestante.questionarios.last %}
+                                <p class="text-muted"><small>Última avaliação: {{ gestante.questionarios.last.data_aplicacao|date:"d/m/Y" }}</small></p>
+                            {% else %}
+                                <p class="text-muted"><small>Sem avaliações registradas</small></p>
+                            {% endif %}
                       
 
                         <div class="mt-3 d-flex flex-column align-items-center gap-2">
@@ -42962,15 +43838,50 @@ document.getElementById('modalConfirmacaoConsentimento').addEventListener('hidde
                                     Avaliar
                                     </a>
 
-                                <a href="#"
-                                class="btn-secondary disabled"
-                                tabindex="-1"
-                                aria-disabled="true"
-                                data-bs-toggle="tooltip"
-                                data-bs-placement="top"
-                                title="Funcionalidade em desenvolvimento">
-                                   Mensagens
-                                </a>
+                                {% if gestante.questionarios.last %}
+                                    {% with ultima_avaliacao=gestante.questionarios.last %}
+                                        {% if ultima_avaliacao.status_processamento_pills == 'COMPLETED' %}
+                                            <a href="{% url 'pilulas' gestante.id %}" 
+                                            id="btn-comunicar-{{ gestante.id }}"
+                                            class="btn-secondary">
+                                               Mensagens
+                                            </a>
+                                        {% elif ultima_avaliacao.status_processamento_pills == 'FAILED' %}
+                                            <a href="#"
+                                            id="btn-comunicar-{{ gestante.id }}"
+                                            class="btn-secondary disabled"
+                                            tabindex="-1"
+                                            aria-disabled="true"
+                                            data-bs-toggle="tooltip"
+                                            data-bs-placement="top"
+                                            title="A MarIA teve um erro ao processar essa avaliação. Tente gerar uma nova avaliação para reprocessar.">
+                                               Mensagens
+                                            </a>
+                                        {% else %}
+                                            {# PENDING ou PROCESSING #}
+                                            <a href="#"
+                                            id="btn-comunicar-{{ gestante.id }}"
+                                            class="btn-secondary disabled"
+                                            tabindex="-1"
+                                            aria-disabled="true"
+                                            data-bs-toggle="tooltip"
+                                            data-bs-placement="top"
+                                            title="A MarIA ainda está processando as informações. Aguarde mais um pouco.">
+                                               Mensagens
+                                            </a>
+                                        {% endif %}
+                                    {% endwith %}
+                                {% else %}
+                                    <a href="#"
+                                    class="btn-secondary disabled"
+                                    tabindex="-1"
+                                    aria-disabled="true"
+                                    data-bs-toggle="tooltip"
+                                    data-bs-placement="top"
+                                    title="Você precisa registrar ao menos uma avaliação antes de pedir orientações.">
+                                       Mensagens
+                                    </a>
+                                {% endif %}
                             </div>
 
        
@@ -44400,34 +45311,34 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]
 
 API de gerenciamento de gestantes em FastAPI, com suporte FHIR R4 (Patient).
 
-## Implementacao ativa
+## Implementação ativa
 
-- A implementacao ativa deste servico esta em `app/` e usa FastAPI.
-- A implementacao Django anterior foi preservada em `legacy-django/` apenas como referencia historica.
-- O servico possui Dockerfile proprio e deve ser executado como unidade independente.
+- A implementação ativa deste serviço está em `app/` e usa FastAPI.
+- A implementação Django anterior foi preservada em `legacy-django/` apenas como referência histórica.
+- O serviço possui Dockerfile próprio e deve ser executado como unidade independente.
 
-## Decisoes de interoperabilidade
+## Decisões de interoperabilidade
 
 - Conformidade FHIR: validada com `fhir.resources==8.2.0`.
-- Regras de negocio: isoladas em `app/services/gestantes.py`.
+- Regras de negócio: isoladas em `app/services/gestantes.py`.
 - Perfil local de `Patient`: `https://integrai.ufma.br/fhir/StructureDefinition/GestantePatient`.
-- Extensoes usadas no `Patient` para dados de dominio:
-  - peso pre-gestacional
+- Extensões usadas no `Patient` para dados de domínio:
+  - peso pré-gestacional
   - altura
   - vulnerabilidade social
-  - usuario responsavel (`usuario_id`)
-- Regra de consistencia:
-  - `POST /fhir/Patient` exige os campos de dominio nas extensoes (sem defaults implicitos).
+  - usuário responsável (`usuario_id`)
+- Regra de consistência:
+  - `POST /fhir/Patient` exige os campos de domínio nas extensões (sem defaults implícitos).
   - `PUT /fhir/Patient/{id}` permite payload parcial, mas valida o estado final combinado.
-- Erros dos endpoints FHIR sao retornados como `OperationOutcome`.
-- O `CapabilityStatement` declara recurso, perfil, interacoes e parametros de busca suportados.
+- Erros dos endpoints FHIR são retornados como `OperationOutcome`.
+- O `CapabilityStatement` declara recurso, perfil, interações e parâmetros de busca suportados.
 
-## Microservico
+## Microsserviço
 
-- Contexto de dominio: gestantes e consentimentos.
-- Persistencia propria: banco PostgreSQL `gestantes_db`.
-- Comunicacao externa: API REST HTTP e fachada FHIR R4.
-- Porta padrao interna: `8001`.
+- Contexto de domínio: gestantes e consentimentos.
+- Persistência própria: banco PostgreSQL `gestantes_db`.
+- Comunicação externa: API REST HTTP e fachada FHIR R4.
+- Porta padrão interna: `8001`.
 
 ## Executar localmente
 
@@ -44438,13 +45349,13 @@ uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
 
 ## Executar com Docker
 
-No diretorio raiz do projeto:
+No diretório raiz do projeto:
 
 ```bash
 docker compose up --build gestantes-service
 ```
 
-O `docker-compose.yml` raiz sobe tambem o banco isolado `gestantes-db`, exposto em `5433` no host e `5432` na rede Docker.
+O `docker-compose.yml` raiz sobe também o banco isolado `gestantes-db`, exposto em `5433` no host e `5432` na rede Docker.
 
 ## Endpoints principais
 
@@ -44454,7 +45365,7 @@ O `docker-compose.yml` raiz sobe tambem o banco isolado `gestantes-db`, exposto 
 - `GET /api/v1/consentimentos`
 - `POST /api/v1/consentimentos`
 
-## FHIR (minimo)
+## FHIR (mínimo)
 
 - `GET /fhir/metadata`
 - `GET /fhir/Patient`
@@ -44483,6 +45394,65 @@ httpx==0.26.0
 Gestantes Service package.
 """
 
+
+
+========== .\gestantes-service\app\auth.py ==========
+
+"""Authentication dependency for service-to-service requests."""
+import httpx
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+from app.config import get_settings
+
+
+security = HTTPBearer(auto_error=False)
+settings = get_settings()
+
+
+async def require_authenticated_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+) -> dict:
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            response = await client.get(
+                f"{settings.USERS_SERVICE_URL}/api/v1/auth/me",
+                headers={"Authorization": f"Bearer {credentials.credentials}"},
+            )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Users service unavailable",
+        ) from exc
+
+    if response.status_code == status.HTTP_401_UNAUTHORIZED:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid access token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied",
+        )
+
+    return response.json()
+
+
+def is_admin_user(user: dict) -> bool:
+    return bool(user.get("is_staff") or user.get("is_superuser"))
+
+
+def can_access_usuario(user: dict, usuario_id: int | None) -> bool:
+    return is_admin_user(user) or usuario_id == user.get("id")
 
 
 ========== .\gestantes-service\app\config.py ==========
@@ -44567,10 +45537,11 @@ def get_db():
 """
 Gestantes Service - FastAPI entrypoint.
 """
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
+from app.auth import require_authenticated_user
 from app.database import Base, engine
 from app.fhir.router import router as fhir_router
 from app.routers import consentimentos, gestantes
@@ -44593,9 +45564,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(gestantes.router, prefix="/api/v1")
-app.include_router(consentimentos.router, prefix="/api/v1")
-app.include_router(fhir_router)
+auth_dependencies = [Depends(require_authenticated_user)]
+
+app.include_router(gestantes.router, prefix="/api/v1", dependencies=auth_dependencies)
+app.include_router(consentimentos.router, prefix="/api/v1", dependencies=auth_dependencies)
+app.include_router(fhir_router, dependencies=auth_dependencies)
 
 
 @app.on_event("startup")
@@ -44628,7 +45601,6 @@ if __name__ == "__main__":
         port=settings.PORT,
         reload=settings.DEBUG,
     )
-
 
 
 ========== .\gestantes-service\app\schemas.py ==========
@@ -44664,7 +45636,7 @@ class GestanteBase(BaseModel):
             return f"+{digits}"
         if len(digits) in (10, 11):
             return f"+55{digits}"
-        raise ValueError("Telefone invalido. Informe DDD com 10 ou 11 digitos.")
+        raise ValueError("Telefone inválido. Informe DDD com 10 ou 11 dígitos.")
 
     @model_validator(mode="after")
     def validate_business_rules(self):
@@ -44696,7 +45668,7 @@ class GestanteUpdate(BaseModel):
             return f"+{digits}"
         if len(digits) in (10, 11):
             return f"+55{digits}"
-        raise ValueError("Telefone invalido. Informe DDD com 10 ou 11 digitos.")
+        raise ValueError("Telefone inválido. Informe DDD com 10 ou 11 dígitos.")
 
     @model_validator(mode="after")
     def validate_optional_business_rules(self):
@@ -44820,6 +45792,8 @@ def gestante_to_fhir_patient(gestante: Gestante) -> dict[str, Any]:
         payload["telecom"] = [
             {"system": "phone", "value": gestante.telefone, "use": "mobile"},
         ]
+    if gestante.foto:
+        payload["photo"] = [_foto_to_attachment(gestante.foto)]
 
     return Patient.model_validate(payload).model_dump(mode="json", by_alias=True, exclude_none=True)
 
@@ -44858,6 +45832,7 @@ def fhir_patient_to_gestante(body: dict[str, Any], *, require_domain_fields: boo
     altura = _extract_extension_value(extensions, EXT_ALTURA, "valueDecimal")
     vulnerabilidade = _extract_extension_value(extensions, EXT_VULNERABILIDADE, "valueBoolean")
     usuario_id = _extract_extension_value(extensions, EXT_USUARIO_ID, "valueInteger")
+    foto = _extract_photo(patient)
 
     if require_domain_fields:
         missing = []
@@ -44869,7 +45844,7 @@ def fhir_patient_to_gestante(body: dict[str, Any], *, require_domain_fields: boo
             missing.append("extension:vulnerabilidade_social")
         if missing:
             raise ValueError(
-                "FHIR Patient incompleto para dominio gestante. Campos obrigatorios ausentes: "
+                "FHIR Patient incompleto para domínio gestante. Campos obrigatórios ausentes: "
                 + ", ".join(missing)
             )
 
@@ -44881,6 +45856,7 @@ def fhir_patient_to_gestante(body: dict[str, Any], *, require_domain_fields: boo
         "altura": float(altura) if altura is not None else None,
         "vulnerabilidade_social": bool(vulnerabilidade) if vulnerabilidade is not None else None,
         "usuario_id": int(usuario_id) if usuario_id is not None else None,
+        "foto": foto,
     }
 
 
@@ -44898,6 +45874,19 @@ def _extract_extension_value(extensions, url: str, attr: str):
     return None
 
 
+def _foto_to_attachment(foto: str) -> dict[str, str]:
+    return {"url": foto}
+
+
+def _extract_photo(patient: Patient) -> str | None:
+    if not patient.photo:
+        return None
+    photo = patient.photo[0]
+    if getattr(photo, "url", None):
+        return str(photo.url)
+    return None
+
+
 ========== .\gestantes-service\app\fhir\router.py ==========
 
 """
@@ -44910,6 +45899,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.auth import can_access_usuario, is_admin_user, require_authenticated_user
 from app.database import get_db
 from app.fhir.patient import (
     GESTANTE_PATIENT_PROFILE,
@@ -45021,8 +46011,11 @@ async def search_patients(
     identifier: Optional[str] = Query(None),
     _count: int = Query(20, ge=1, le=200),
     db: Session = Depends(get_db),
+    current_user: dict = Depends(require_authenticated_user),
 ):
     query = db.query(Gestante)
+    if not is_admin_user(current_user):
+        query = query.filter(Gestante.usuario_id == current_user.get("id"))
     if name:
         query = query.filter(Gestante.nome.ilike(f"%{name}%"))
 
@@ -45049,24 +46042,35 @@ async def search_patients(
 
 
 @router.get("/Patient/{patient_id}")
-async def get_patient(patient_id: int, db: Session = Depends(get_db)):
+async def get_patient(
+    patient_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_authenticated_user),
+):
     gestante = db.query(Gestante).filter(Gestante.id == patient_id).first()
-    if not gestante:
-        return operation_outcome(status.HTTP_404_NOT_FOUND, "Patient nao encontrado", code="not-found")
+    if not gestante or not can_access_usuario(current_user, gestante.usuario_id):
+        return operation_outcome(status.HTTP_404_NOT_FOUND, "Patient não encontrado", code="not-found")
     return gestante_to_fhir_patient(gestante)
 
 
 @router.post("/Patient", status_code=status.HTTP_201_CREATED)
-async def create_patient(body: dict, db: Session = Depends(get_db)):
+async def create_patient(
+    body: dict,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_authenticated_user),
+):
     try:
         mapped = fhir_patient_to_gestante(body, require_domain_fields=True)
     except ValueError as exc:
-        return operation_outcome(status.HTTP_400_BAD_REQUEST, f"FHIR Patient invalido: {exc}", code="invalid")
+        return operation_outcome(status.HTTP_400_BAD_REQUEST, f"FHIR Patient inválido: {exc}", code="invalid")
 
     try:
         validar_regras_gestante(mapped["data_nascimento"], int(mapped["peso"]), float(mapped["altura"]))
     except ValueError as exc:
         return operation_outcome(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc), code="business-rule")
+
+    if not is_admin_user(current_user):
+        mapped["usuario_id"] = current_user.get("id")
 
     gestante = Gestante(**mapped)
     db.add(gestante)
@@ -45076,15 +46080,20 @@ async def create_patient(body: dict, db: Session = Depends(get_db)):
 
 
 @router.put("/Patient/{patient_id}")
-async def update_patient(patient_id: int, body: dict, db: Session = Depends(get_db)):
+async def update_patient(
+    patient_id: int,
+    body: dict,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_authenticated_user),
+):
     gestante = db.query(Gestante).filter(Gestante.id == patient_id).first()
-    if not gestante:
-        return operation_outcome(status.HTTP_404_NOT_FOUND, "Patient nao encontrado", code="not-found")
+    if not gestante or not can_access_usuario(current_user, gestante.usuario_id):
+        return operation_outcome(status.HTTP_404_NOT_FOUND, "Patient não encontrado", code="not-found")
 
     try:
         mapped = fhir_patient_to_gestante(body, require_domain_fields=False)
     except ValueError as exc:
-        return operation_outcome(status.HTTP_400_BAD_REQUEST, f"FHIR Patient invalido: {exc}", code="invalid")
+        return operation_outcome(status.HTTP_400_BAD_REQUEST, f"FHIR Patient inválido: {exc}", code="invalid")
 
     final_nome = mapped["nome"] if mapped["nome"] is not None else gestante.nome
     final_data_nascimento = (
@@ -45099,6 +46108,9 @@ async def update_patient(patient_id: int, body: dict, db: Session = Depends(get_
         else gestante.vulnerabilidade_social
     )
     final_usuario_id = mapped["usuario_id"] if mapped["usuario_id"] is not None else gestante.usuario_id
+    if not is_admin_user(current_user):
+        final_usuario_id = gestante.usuario_id
+    final_foto = mapped["foto"] if mapped["foto"] is not None else gestante.foto
 
     try:
         validar_regras_gestante(final_data_nascimento, int(final_peso), float(final_altura))
@@ -45112,16 +46124,21 @@ async def update_patient(patient_id: int, body: dict, db: Session = Depends(get_
     gestante.altura = final_altura
     gestante.vulnerabilidade_social = final_vulnerabilidade
     gestante.usuario_id = final_usuario_id
+    gestante.foto = final_foto
     db.commit()
     db.refresh(gestante)
     return gestante_to_fhir_patient(gestante)
 
 
 @router.delete("/Patient/{patient_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_patient(patient_id: int, db: Session = Depends(get_db)):
+async def delete_patient(
+    patient_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_authenticated_user),
+):
     gestante = db.query(Gestante).filter(Gestante.id == patient_id).first()
-    if not gestante:
-        return operation_outcome(status.HTTP_404_NOT_FOUND, "Patient nao encontrado", code="not-found")
+    if not gestante or not can_access_usuario(current_user, gestante.usuario_id):
+        return operation_outcome(status.HTTP_404_NOT_FOUND, "Patient não encontrado", code="not-found")
 
     db.delete(gestante)
     db.commit()
@@ -45212,7 +46229,6 @@ class Gestante(Base):
         ultimo_consentimento = sorted(self.consentimentos, key=lambda c: c.data_registro, reverse=True)[0]
         return ultimo_consentimento.status == "aceito"
 
-
 class ConsentimentoGestante(Base):
     __tablename__ = "consentimentos_gestante"
 
@@ -45244,6 +46260,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.auth import can_access_usuario, is_admin_user, require_authenticated_user
 from app.database import get_db
 from app.models.gestante import ConsentimentoGestante, Gestante
 from app.schemas import ConsentimentoCreate, ConsentimentoResponse, ConsentimentoUpdate
@@ -45258,8 +46275,11 @@ async def list_consentimentos(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=200),
     db: Session = Depends(get_db),
+    current_user: dict = Depends(require_authenticated_user),
 ):
     query = db.query(ConsentimentoGestante)
+    if not is_admin_user(current_user):
+        query = query.join(Gestante).filter(Gestante.usuario_id == current_user.get("id"))
     if gestante_id is not None:
         query = query.filter(ConsentimentoGestante.gestante_id == gestante_id)
     if status_filter:
@@ -45268,20 +46288,31 @@ async def list_consentimentos(
 
 
 @router.get("/{consentimento_id}", response_model=ConsentimentoResponse)
-async def get_consentimento(consentimento_id: int, db: Session = Depends(get_db)):
+async def get_consentimento(
+    consentimento_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_authenticated_user),
+):
     consentimento = db.query(ConsentimentoGestante).filter(ConsentimentoGestante.id == consentimento_id).first()
-    if not consentimento:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Consentimento nao encontrado")
+    if not consentimento or not can_access_usuario(current_user, consentimento.gestante.usuario_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Consentimento não encontrado")
     return consentimento
 
 
 @router.post("", response_model=ConsentimentoResponse, status_code=status.HTTP_201_CREATED)
-async def create_consentimento(payload: ConsentimentoCreate, db: Session = Depends(get_db)):
+async def create_consentimento(
+    payload: ConsentimentoCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_authenticated_user),
+):
     gestante = db.query(Gestante).filter(Gestante.id == payload.gestante_id).first()
-    if not gestante:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Gestante nao encontrada")
+    if not gestante or not can_access_usuario(current_user, gestante.usuario_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Gestante não encontrada")
 
-    consentimento = ConsentimentoGestante(**payload.model_dump())
+    data = payload.model_dump()
+    if not is_admin_user(current_user):
+        data["usuario_id"] = current_user.get("id")
+    consentimento = ConsentimentoGestante(**data)
     db.add(consentimento)
     db.commit()
     db.refresh(consentimento)
@@ -45293,10 +46324,11 @@ async def update_consentimento(
     consentimento_id: int,
     payload: ConsentimentoUpdate,
     db: Session = Depends(get_db),
+    current_user: dict = Depends(require_authenticated_user),
 ):
     consentimento = db.query(ConsentimentoGestante).filter(ConsentimentoGestante.id == consentimento_id).first()
-    if not consentimento:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Consentimento nao encontrado")
+    if not consentimento or not can_access_usuario(current_user, consentimento.gestante.usuario_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Consentimento não encontrado")
 
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(consentimento, field, value)
@@ -45307,15 +46339,18 @@ async def update_consentimento(
 
 
 @router.delete("/{consentimento_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_consentimento(consentimento_id: int, db: Session = Depends(get_db)):
+async def delete_consentimento(
+    consentimento_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_authenticated_user),
+):
     consentimento = db.query(ConsentimentoGestante).filter(ConsentimentoGestante.id == consentimento_id).first()
-    if not consentimento:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Consentimento nao encontrado")
+    if not consentimento or not can_access_usuario(current_user, consentimento.gestante.usuario_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Consentimento não encontrado")
 
     db.delete(consentimento)
     db.commit()
     return None
-
 
 
 ========== .\gestantes-service\app\routers\gestantes.py ==========
@@ -45323,19 +46358,18 @@ async def delete_consentimento(consentimento_id: int, db: Session = Depends(get_
 """
 Gestantes CRUD endpoints.
 """
-import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.auth import can_access_usuario, is_admin_user, require_authenticated_user
 from app.database import get_db
 from app.models.gestante import Gestante
 from app.schemas import GestanteCreate, GestanteResponse, GestanteUpdate
 from app.services.gestantes import validar_regras_gestante
 
 router = APIRouter(prefix="/gestantes", tags=["Gestantes"])
-logger = logging.getLogger(__name__)
 
 
 @router.get("", response_model=list[GestanteResponse])
@@ -45346,40 +46380,43 @@ async def list_gestantes(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=200),
     db: Session = Depends(get_db),
+    current_user: dict = Depends(require_authenticated_user),
 ):
     query = db.query(Gestante)
+    if not is_admin_user(current_user):
+        query = query.filter(Gestante.usuario_id == current_user.get("id"))
     if nome:
         query = query.filter(Gestante.nome.ilike(f"%{nome}%"))
-    if usuario_id is not None:
+    if usuario_id is not None and is_admin_user(current_user):
         query = query.filter(Gestante.usuario_id == usuario_id)
     if vulnerabilidade_social is not None:
         query = query.filter(Gestante.vulnerabilidade_social == vulnerabilidade_social)
-
-    gestantes = query.order_by(Gestante.data_cadastro.desc()).offset(skip).limit(limit).all()
-    gestantes_debug = [
-        GestanteResponse.model_validate(gestante).model_dump(mode="json")
-        for gestante in gestantes
-    ]
-    logger.debug(
-        "list_gestantes retornou %s registros: %s",
-        len(gestantes),
-        gestantes_debug,
-    )
-    return gestantes
+    return query.order_by(Gestante.data_cadastro.desc()).offset(skip).limit(limit).all()
 
 
 @router.get("/{gestante_id}", response_model=GestanteResponse)
-async def get_gestante(gestante_id: int, db: Session = Depends(get_db)):
+async def get_gestante(
+    gestante_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_authenticated_user),
+):
     gestante = db.query(Gestante).filter(Gestante.id == gestante_id).first()
-    if not gestante:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Gestante nao encontrada")
+    if not gestante or not can_access_usuario(current_user, gestante.usuario_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Gestante não encontrada")
     return gestante
 
 
 @router.post("", response_model=GestanteResponse, status_code=status.HTTP_201_CREATED)
-async def create_gestante(payload: GestanteCreate, db: Session = Depends(get_db)):
+async def create_gestante(
+    payload: GestanteCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_authenticated_user),
+):
     validar_regras_gestante(payload.data_nascimento, payload.peso, payload.altura)
-    gestante = Gestante(**payload.model_dump())
+    data = payload.model_dump()
+    if not is_admin_user(current_user):
+        data["usuario_id"] = current_user.get("id")
+    gestante = Gestante(**data)
     db.add(gestante)
     db.commit()
     db.refresh(gestante)
@@ -45387,12 +46424,19 @@ async def create_gestante(payload: GestanteCreate, db: Session = Depends(get_db)
 
 
 @router.put("/{gestante_id}", response_model=GestanteResponse)
-async def update_gestante(gestante_id: int, payload: GestanteUpdate, db: Session = Depends(get_db)):
+async def update_gestante(
+    gestante_id: int,
+    payload: GestanteUpdate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_authenticated_user),
+):
     gestante = db.query(Gestante).filter(Gestante.id == gestante_id).first()
-    if not gestante:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Gestante nao encontrada")
+    if not gestante or not can_access_usuario(current_user, gestante.usuario_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Gestante não encontrada")
 
     updates = payload.model_dump(exclude_unset=True)
+    if not is_admin_user(current_user):
+        updates.pop("usuario_id", None)
     final_data_nascimento = updates.get("data_nascimento", gestante.data_nascimento)
     final_peso = updates.get("peso", gestante.peso)
     final_altura = updates.get("altura", gestante.altura)
@@ -45407,10 +46451,14 @@ async def update_gestante(gestante_id: int, payload: GestanteUpdate, db: Session
 
 
 @router.delete("/{gestante_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_gestante(gestante_id: int, db: Session = Depends(get_db)):
+async def delete_gestante(
+    gestante_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_authenticated_user),
+):
     gestante = db.query(Gestante).filter(Gestante.id == gestante_id).first()
-    if not gestante:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Gestante nao encontrada")
+    if not gestante or not can_access_usuario(current_user, gestante.usuario_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Gestante não encontrada")
 
     db.delete(gestante)
     db.commit()
@@ -46160,20 +47208,20 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 # users-service
 
-API de gerenciamento de usuarios e autenticacao em FastAPI, com suporte FHIR R4 para Patient e Practitioner.
+API de gerenciamento de usuários e autenticação em FastAPI, com suporte FHIR R4 para Patient e Practitioner.
 
-## Implementacao ativa
+## Implementação ativa
 
-- A implementacao ativa esta em `app/` e usa FastAPI.
-- A implementacao Django anterior foi preservada em `legacy-django/` apenas como referencia historica.
-- O servico possui Dockerfile proprio e deve ser executado como unidade independente.
+- A implementação ativa está em `app/` e usa FastAPI.
+- A implementação Django anterior foi preservada em `legacy-django/` apenas como referência histórica.
+- O serviço possui Dockerfile próprio e deve ser executado como unidade independente.
 
-## Microservico
+## Microsserviço
 
-- Contexto de dominio: usuarios, autenticacao e perfil de agente.
-- Persistencia propria: banco PostgreSQL `users_db`.
-- Comunicacao externa: API REST HTTP, JWT e fachada FHIR R4.
-- Porta interna padrao: `8000`.
+- Contexto de domínio: usuários, autenticação e perfil de agente.
+- Persistência própria: banco PostgreSQL `users_db`.
+- Comunicação externa: API REST HTTP, JWT e fachada FHIR R4.
+- Porta interna padrão: `8000`.
 - Porta exposta no host pelo compose raiz: `8003`.
 
 ## Executar localmente
@@ -46185,13 +47233,13 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 ## Executar com Docker
 
-No diretorio raiz do projeto:
+No diretório raiz do projeto:
 
 ```bash
 docker compose up --build users-service
 ```
 
-O `docker-compose.yml` raiz sobe tambem o banco isolado `users-db`, exposto em `5434` no host e `5432` na rede Docker.
+O `docker-compose.yml` raiz sobe também o banco isolado `users-db`, exposto em `5434` no host e `5432` na rede Docker.
 
 ## Endpoints principais
 
@@ -47197,10 +48245,16 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.usuario import Usuario
-from app.schemas import Token, TokenWithUser, PasswordResetRequest, PasswordResetConfirm
-from app.auth import verify_password, create_access_token, get_password_hash
+from app.schemas import Token, TokenWithUser, PasswordResetRequest, PasswordResetConfirm, UsuarioResponse
+from app.auth import verify_password, create_access_token, get_password_hash, get_current_active_user
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+
+@router.get("/me", response_model=UsuarioResponse)
+async def current_user(current_user: Usuario = Depends(get_current_active_user)):
+    """Validate bearer token and return the authenticated user."""
+    return current_user
 
 
 @router.post("/token", response_model=TokenWithUser)
@@ -47412,10 +48466,11 @@ async def confirm_password_reset(
     
     return {"message": "Senha alterada com sucesso."}
 
+
 ========== .\users-service\app\routers\usuarios.py ==========
 
 """
-Usuario Router - CRUD endpoints
+Usuários Router - CRUD endpoints
 """
 from typing import List, Optional
 
@@ -47431,7 +48486,7 @@ from app.schemas import (
 )
 from app.auth import get_current_active_user, get_password_hash
 
-router = APIRouter(prefix="/usuarios", tags=["Usuarios"])
+router = APIRouter(prefix="/usuarios", tags=["Usuários"])
 
 
 # ==================== AgenteProfile Endpoints ====================
@@ -47522,7 +48577,7 @@ async def list_usuarios(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user)
 ):
-    """List all usuarios with pagination"""
+    """List all usuários with pagination"""
     query = db.query(Usuario)
     
     if is_active is not None:
@@ -47538,7 +48593,7 @@ async def get_usuario_by_cpf(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user)
 ):
-    """Buscar usuario por CPF (username)"""
+    """Buscar usuário por CPF (username)"""
     # Garante que o CPF tenha apenas dígitos
     cpf = ''.join(filter(str.isdigit, cpf))
     

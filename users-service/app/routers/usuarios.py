@@ -1,5 +1,5 @@
 """
-Usuario Router - CRUD endpoints
+Usuários Router - CRUD endpoints
 """
 from typing import List, Optional
 
@@ -15,7 +15,7 @@ from app.schemas import (
 )
 from app.auth import get_current_active_user, get_password_hash
 
-router = APIRouter(prefix="/usuarios", tags=["Usuarios"])
+router = APIRouter(prefix="/usuarios", tags=["Usuários"])
 
 
 # ==================== AgenteProfile Endpoints ====================
@@ -106,7 +106,7 @@ async def list_usuarios(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user)
 ):
-    """List all usuarios with pagination"""
+    """List all usuários with pagination"""
     query = db.query(Usuario)
     
     if is_active is not None:
@@ -122,7 +122,7 @@ async def get_usuario_by_cpf(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user)
 ):
-    """Buscar usuario por CPF (username)"""
+    """Buscar usuário por CPF (username)"""
     # Garante que o CPF tenha apenas dígitos
     cpf = ''.join(filter(str.isdigit, cpf))
     

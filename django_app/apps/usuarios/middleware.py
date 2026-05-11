@@ -3,6 +3,7 @@ from django.utils.functional import SimpleLazyObject
 
 from apps.usuarios.backends import MicroserviceUser
 from apps.usuarios.services import get_cached_microservice_data, refresh_cached_user
+from microservices.clients import reset_request_auth_token, set_request_auth_token
 
 
 def get_microservice_user(request):
@@ -41,6 +42,10 @@ class MicroserviceUserMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
+        token_context = set_request_auth_token(request.session.get('microservice_token'))
         if request.session.get('microservice_authenticated'):
             request.user = SimpleLazyObject(lambda: get_microservice_user(request))
-        return self.get_response(request)
+        try:
+            return self.get_response(request)
+        finally:
+            reset_request_auth_token(token_context)

@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.auth import can_access_usuario, is_admin_user, require_authenticated_user
 from app.database import get_db
 from app.fhir.patient import (
     GESTANTE_PATIENT_PROFILE,
@@ -119,8 +120,11 @@ async def search_patients(
     identifier: Optional[str] = Query(None),
     _count: int = Query(20, ge=1, le=200),
     db: Session = Depends(get_db),
+    current_user: dict = Depends(require_authenticated_user),
 ):
     query = db.query(Gestante)
+    if not is_admin_user(current_user):
+        query = query.filter(Gestante.usuario_id == current_user.get("id"))
     if name:
         query = query.filter(Gestante.nome.ilike(f"%{name}%"))
 
@@ -147,24 +151,35 @@ async def search_patients(
 
 
 @router.get("/Patient/{patient_id}")
-async def get_patient(patient_id: int, db: Session = Depends(get_db)):
+async def get_patient(
+    patient_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_authenticated_user),
+):
     gestante = db.query(Gestante).filter(Gestante.id == patient_id).first()
-    if not gestante:
-        return operation_outcome(status.HTTP_404_NOT_FOUND, "Patient nao encontrado", code="not-found")
+    if not gestante or not can_access_usuario(current_user, gestante.usuario_id):
+        return operation_outcome(status.HTTP_404_NOT_FOUND, "Patient não encontrado", code="not-found")
     return gestante_to_fhir_patient(gestante)
 
 
 @router.post("/Patient", status_code=status.HTTP_201_CREATED)
-async def create_patient(body: dict, db: Session = Depends(get_db)):
+async def create_patient(
+    body: dict,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_authenticated_user),
+):
     try:
         mapped = fhir_patient_to_gestante(body, require_domain_fields=True)
     except ValueError as exc:
-        return operation_outcome(status.HTTP_400_BAD_REQUEST, f"FHIR Patient invalido: {exc}", code="invalid")
+        return operation_outcome(status.HTTP_400_BAD_REQUEST, f"FHIR Patient inválido: {exc}", code="invalid")
 
     try:
         validar_regras_gestante(mapped["data_nascimento"], int(mapped["peso"]), float(mapped["altura"]))
     except ValueError as exc:
         return operation_outcome(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc), code="business-rule")
+
+    if not is_admin_user(current_user):
+        mapped["usuario_id"] = current_user.get("id")
 
     gestante = Gestante(**mapped)
     db.add(gestante)
@@ -174,15 +189,20 @@ async def create_patient(body: dict, db: Session = Depends(get_db)):
 
 
 @router.put("/Patient/{patient_id}")
-async def update_patient(patient_id: int, body: dict, db: Session = Depends(get_db)):
+async def update_patient(
+    patient_id: int,
+    body: dict,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_authenticated_user),
+):
     gestante = db.query(Gestante).filter(Gestante.id == patient_id).first()
-    if not gestante:
-        return operation_outcome(status.HTTP_404_NOT_FOUND, "Patient nao encontrado", code="not-found")
+    if not gestante or not can_access_usuario(current_user, gestante.usuario_id):
+        return operation_outcome(status.HTTP_404_NOT_FOUND, "Patient não encontrado", code="not-found")
 
     try:
         mapped = fhir_patient_to_gestante(body, require_domain_fields=False)
     except ValueError as exc:
-        return operation_outcome(status.HTTP_400_BAD_REQUEST, f"FHIR Patient invalido: {exc}", code="invalid")
+        return operation_outcome(status.HTTP_400_BAD_REQUEST, f"FHIR Patient inválido: {exc}", code="invalid")
 
     final_nome = mapped["nome"] if mapped["nome"] is not None else gestante.nome
     final_data_nascimento = (
@@ -197,6 +217,9 @@ async def update_patient(patient_id: int, body: dict, db: Session = Depends(get_
         else gestante.vulnerabilidade_social
     )
     final_usuario_id = mapped["usuario_id"] if mapped["usuario_id"] is not None else gestante.usuario_id
+    if not is_admin_user(current_user):
+        final_usuario_id = gestante.usuario_id
+    final_foto = mapped["foto"] if mapped["foto"] is not None else gestante.foto
 
     try:
         validar_regras_gestante(final_data_nascimento, int(final_peso), float(final_altura))
@@ -210,16 +233,21 @@ async def update_patient(patient_id: int, body: dict, db: Session = Depends(get_
     gestante.altura = final_altura
     gestante.vulnerabilidade_social = final_vulnerabilidade
     gestante.usuario_id = final_usuario_id
+    gestante.foto = final_foto
     db.commit()
     db.refresh(gestante)
     return gestante_to_fhir_patient(gestante)
 
 
 @router.delete("/Patient/{patient_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_patient(patient_id: int, db: Session = Depends(get_db)):
+async def delete_patient(
+    patient_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_authenticated_user),
+):
     gestante = db.query(Gestante).filter(Gestante.id == patient_id).first()
-    if not gestante:
-        return operation_outcome(status.HTTP_404_NOT_FOUND, "Patient nao encontrado", code="not-found")
+    if not gestante or not can_access_usuario(current_user, gestante.usuario_id):
+        return operation_outcome(status.HTTP_404_NOT_FOUND, "Patient não encontrado", code="not-found")
 
     db.delete(gestante)
     db.commit()

@@ -1,21 +1,20 @@
 """
-Gestantes Service - FastAPI entrypoint.
+Avaliacoes Service - FastAPI entrypoint.
 """
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.auth import require_authenticated_user
 from app.database import Base, engine
 from app.fhir.router import router as fhir_router
-from app.routers import consentimentos, gestantes
+from app.routers import avaliacoes, pilulas
 
 settings = get_settings()
 
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    description="Gestantes Service API with FHIR R4 support",
+    description="Avaliacoes Service API with FHIR R4 support",
     docs_url="/docs",
     redoc_url="/redoc",
 )
@@ -28,11 +27,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-auth_dependencies = [Depends(require_authenticated_user)]
-
-app.include_router(gestantes.router, prefix="/api/v1", dependencies=auth_dependencies)
-app.include_router(consentimentos.router, prefix="/api/v1", dependencies=auth_dependencies)
-app.include_router(fhir_router, dependencies=auth_dependencies)
+app.include_router(avaliacoes.router, prefix="/api")
+app.include_router(pilulas.router, prefix="/api")
+app.include_router(fhir_router)
 
 
 @app.on_event("startup")
@@ -53,6 +50,11 @@ async def root():
 
 @app.get("/health")
 async def health():
+    return {"status": "healthy"}
+
+
+@app.get("/api/health")
+async def api_health():
     return {"status": "healthy"}
 
 

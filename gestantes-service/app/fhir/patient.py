@@ -62,6 +62,8 @@ def gestante_to_fhir_patient(gestante: Gestante) -> dict[str, Any]:
         payload["telecom"] = [
             {"system": "phone", "value": gestante.telefone, "use": "mobile"},
         ]
+    if gestante.foto:
+        payload["photo"] = [_foto_to_attachment(gestante.foto)]
 
     return Patient.model_validate(payload).model_dump(mode="json", by_alias=True, exclude_none=True)
 
@@ -100,6 +102,7 @@ def fhir_patient_to_gestante(body: dict[str, Any], *, require_domain_fields: boo
     altura = _extract_extension_value(extensions, EXT_ALTURA, "valueDecimal")
     vulnerabilidade = _extract_extension_value(extensions, EXT_VULNERABILIDADE, "valueBoolean")
     usuario_id = _extract_extension_value(extensions, EXT_USUARIO_ID, "valueInteger")
+    foto = _extract_photo(patient)
 
     if require_domain_fields:
         missing = []
@@ -111,7 +114,7 @@ def fhir_patient_to_gestante(body: dict[str, Any], *, require_domain_fields: boo
             missing.append("extension:vulnerabilidade_social")
         if missing:
             raise ValueError(
-                "FHIR Patient incompleto para dominio gestante. Campos obrigatorios ausentes: "
+                "FHIR Patient incompleto para domínio gestante. Campos obrigatórios ausentes: "
                 + ", ".join(missing)
             )
 
@@ -123,6 +126,7 @@ def fhir_patient_to_gestante(body: dict[str, Any], *, require_domain_fields: boo
         "altura": float(altura) if altura is not None else None,
         "vulnerabilidade_social": bool(vulnerabilidade) if vulnerabilidade is not None else None,
         "usuario_id": int(usuario_id) if usuario_id is not None else None,
+        "foto": foto,
     }
 
 
@@ -137,4 +141,17 @@ def _extract_extension_value(extensions, url: str, attr: str):
     for ext in extensions:
         if getattr(ext, "url", None) == url:
             return getattr(ext, attr, None)
+    return None
+
+
+def _foto_to_attachment(foto: str) -> dict[str, str]:
+    return {"url": foto}
+
+
+def _extract_photo(patient: Patient) -> str | None:
+    if not patient.photo:
+        return None
+    photo = patient.photo[0]
+    if getattr(photo, "url", None):
+        return str(photo.url)
     return None

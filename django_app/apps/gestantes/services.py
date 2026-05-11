@@ -62,11 +62,55 @@ def _processar_resultado_avaliacao(resultado_json):
     return resultado_json or {}
 
 def obter_dados_risco(ultima_avaliacao, penultima_avaliacao):
-    """
-    DESABILITADO: Função que processa avaliações locais.
-    Use a API do microservice gestantes-service ao invés.
-    """
-    return {}, {}
+    resultado_atual = _processar_resultado_avaliacao(
+        (ultima_avaliacao or {}).get("resultado_integralidade_saude")
+    )
+    resultado_anterior = _processar_resultado_avaliacao(
+        (penultima_avaliacao or {}).get("resultado_integralidade_saude")
+    )
+
+    riscos = _montar_riscos(resultado_atual)
+    evolucao = _montar_evolucao(resultado_atual, resultado_anterior)
+    return riscos, evolucao
+
+
+def _montar_riscos(resultado):
+    if not resultado or resultado.get("prob_integralidade") is None:
+        return {}
+
+    fatores = [
+        NOMES_FATORES.get(fator, fator)
+        for fator in resultado.get("top_fatores", []) or []
+    ]
+
+    return {
+        "integralidade": {
+            "valor": round(float(resultado["prob_integralidade"]), 1),
+            "fatores": fatores,
+        },
+        "outros": [
+            {"nome": "Asma", "valor": round(float(resultado.get("prob_asma", 0)), 1)},
+            {"nome": "Obesidade", "valor": round(float(resultado.get("prob_obesidade", 0)), 1)},
+            {"nome": "Cárie", "valor": round(float(resultado.get("prob_carie", 0)), 1)},
+            {"nome": "Alergia", "valor": round(float(resultado.get("prob_alergia", 0)), 1)},
+        ],
+    }
+
+
+def _montar_evolucao(resultado_atual, resultado_anterior):
+    if not resultado_atual or not resultado_anterior:
+        return {}
+    atual = resultado_atual.get("prob_integralidade")
+    anterior = resultado_anterior.get("prob_integralidade")
+    if atual is None or anterior is None:
+        return {}
+    return {
+        "integralidade": {
+            "delta": round(float(atual) - float(anterior), 1),
+            "valor_atual": round(float(atual), 1),
+            "valor_anterior": round(float(anterior), 1),
+        }
+    }
 
 # DESABILITADO: Função que depende de modelo local Avaliacao
 # Todas as funções abaixo foram comentadas pois usam o modelo Avaliacao

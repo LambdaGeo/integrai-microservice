@@ -175,3 +175,5 @@ cython_debug/
 
 # End of https://www.toptal.com/developers/gitignore/api/django
 db_.sqlite3
+dump_completo.txt
+dump_completo.txt

@@ -1,10 +1,11 @@
 # ======================================
 # Importações principais do Django
 # ======================================
-from datetime import date
+from datetime import date, datetime
 
 from django.shortcuts import render, redirect
 from django.contrib import messages
+from django.core.files.storage import default_storage
 
 # ======================================
 # Importações de apps locais
@@ -15,12 +16,25 @@ from apps.usuarios.decorator import login_required_message
 # ======================================
 # Importações de microserviços
 # ======================================
-from microservices.clients import gestantes_client
+from microservices.clients import avaliacoes_client, gestantes_client
 
 EXT_PESO = "https://integrai.ufma.br/fhir/StructureDefinition/gestante-peso-pre"
 EXT_ALTURA = "https://integrai.ufma.br/fhir/StructureDefinition/gestante-altura"
 EXT_VULNERABILIDADE = "https://integrai.ufma.br/fhir/StructureDefinition/gestante-vulnerabilidade-social"
 EXT_USUARIO_ID = "https://integrai.ufma.br/fhir/StructureDefinition/gestante-usuario-id"
+
+
+class QuestionariosAdapter:
+    def __init__(self, avaliacoes):
+        self._avaliacoes = avaliacoes
+
+    def last(self):
+        return self._avaliacoes[0] if self._avaliacoes else None
+
+
+class FotoAdapter:
+    def __init__(self, url):
+        self.url = url
 
 
 def _fhir_extension(patient, url, value_key):
@@ -58,6 +72,59 @@ def _consentimento_ativo(gestante_id):
     return consentimentos[0].get("status") == "aceito"
 
 
+def _parse_datetime(value):
+    if not value or not isinstance(value, str):
+        return value
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return value
+
+
+def _listar_avaliacoes_gestante(gestante_id):
+    avaliacoes = avaliacoes_client.list_avaliacoes(params={"gestante": gestante_id})
+    avaliacoes = sorted(
+        avaliacoes,
+        key=lambda avaliacao: avaliacao.get("data_aplicacao") or "",
+        reverse=True,
+    )
+    for avaliacao in avaliacoes:
+        avaliacao["data_aplicacao"] = _parse_datetime(avaliacao.get("data_aplicacao"))
+    return avaliacoes
+
+
+def _adicionar_questionarios(gestantes):
+    for gestante in gestantes:
+        gestante["questionarios"] = QuestionariosAdapter(_listar_avaliacoes_gestante(gestante["id"]))
+    return gestantes
+
+
+def _fhir_photo_to_url(patient):
+    photos = patient.get("photo") or []
+    if not photos:
+        return None
+    photo = photos[0]
+    if photo.get("url"):
+        return photo["url"]
+    if photo.get("data"):
+        content_type = photo.get("contentType") or "image/jpeg"
+        return f"data:{content_type};base64,{photo['data']}"
+    return None
+
+
+def _photo_url_to_fhir_attachment(photo_url):
+    if not photo_url:
+        return None
+    return {"url": photo_url}
+
+
+def _uploaded_file_to_photo_url(uploaded_file):
+    if not uploaded_file:
+        return None
+    path = default_storage.save(f"gestantes/fotos/{uploaded_file.name}", uploaded_file)
+    return default_storage.url(path)
+
+
 def _patient_to_gestante(patient):
     nome = ""
     names = patient.get("name") or []
@@ -80,17 +147,21 @@ def _patient_to_gestante(patient):
 
     imc = round(float(peso) / (float(altura) ** 2), 2) if peso and altura else None
     gestante_id = int(patient["id"])
+    foto_url = _fhir_photo_to_url(patient)
 
     return {
         "id": gestante_id,
         "nome": nome,
+        "primeiro_nome": nome.split(" ", 1)[0] if nome else "",
+        "ultimo_nome": nome.split(" ", 1)[1] if " " in nome else "",
         "data_nascimento": data_nascimento,
         "peso": peso,
         "altura": altura,
         "telefone": telefone,
         "vulnerabilidade_social": bool(vulnerabilidade_social),
         "usuario_id": usuario_id,
-        "foto": None,
+        "foto": FotoAdapter(foto_url) if foto_url else None,
+        "foto_url": foto_url,
         "idade": _calcular_idade(data_nascimento),
         "imc": imc,
         "imc_classificacao": _classificar_imc(imc),
@@ -99,7 +170,7 @@ def _patient_to_gestante(patient):
     }
 
 
-def _gestante_form_to_fhir_patient(cleaned_data, usuario_id=None):
+def _gestante_form_to_fhir_patient(cleaned_data, usuario_id=None, existing_photo_url=None):
     extensions = [
         {"url": EXT_PESO, "valueInteger": cleaned_data["peso"]},
         {"url": EXT_ALTURA, "valueDecimal": cleaned_data["altura"]},
@@ -118,6 +189,12 @@ def _gestante_form_to_fhir_patient(cleaned_data, usuario_id=None):
     }
     if cleaned_data.get("telefone"):
         patient["telecom"] = [{"system": "phone", "value": cleaned_data["telefone"], "use": "mobile"}]
+
+    photo_url = _uploaded_file_to_photo_url(cleaned_data.get("foto")) or existing_photo_url
+    photo = _photo_url_to_fhir_attachment(photo_url)
+    if photo:
+        patient["photo"] = [photo]
+
     return patient
 
 
@@ -129,7 +206,8 @@ def _list_gestantes_fhir(usuario_id, nome=None):
     bundle = gestantes_client._request("GET", "/fhir/Patient", params=params)
     entries = (bundle or {}).get("entry", [])
     gestantes = [_patient_to_gestante(entry["resource"]) for entry in entries if entry.get("resource")]
-    return [gestante for gestante in gestantes if gestante.get("usuario_id") == usuario_id]
+    gestantes = [gestante for gestante in gestantes if gestante.get("usuario_id") == usuario_id]
+    return _adicionar_questionarios(gestantes)
 
 
 def _get_gestante_fhir(gestante_id):
@@ -148,7 +226,12 @@ def _create_gestante_fhir(cleaned_data, usuario_id):
 
 
 def _update_gestante_fhir(gestante_id, cleaned_data, usuario_id):
-    patient = _gestante_form_to_fhir_patient(cleaned_data, usuario_id=usuario_id)
+    current = _get_gestante_fhir(gestante_id) or {}
+    patient = _gestante_form_to_fhir_patient(
+        cleaned_data,
+        usuario_id=usuario_id,
+        existing_photo_url=current.get("foto_url"),
+    )
     updated = gestantes_client._request("PUT", f"/fhir/Patient/{gestante_id}", data=patient)
     if not updated or updated.get("resourceType") == "OperationOutcome":
         return None
@@ -243,7 +326,7 @@ def nova_gestante(request):
                 messages.success(request, 'Nova gestante cadastrada!')
                 return redirect('index')
             else:
-                messages.error(request, 'Erro ao cadastrar gestante.')
+                messages.error(request, gestantes_client.last_error or 'Erro ao cadastrar gestante.')
 
     return render(request, 'gestantes/crud/acolher.html', {'form': form})
 
@@ -274,7 +357,7 @@ def editar_gestante(request, gestante_id):
                 messages.success(request, 'Gestante editada com sucesso')
                 return redirect('index')
             else:
-                messages.error(request, 'Erro ao editar gestante.')
+                messages.error(request, gestantes_client.last_error or 'Erro ao editar gestante.')
 
     # MUDANÇA AQUI: Passe o objeto 'gestante' completo para o template
     context = {

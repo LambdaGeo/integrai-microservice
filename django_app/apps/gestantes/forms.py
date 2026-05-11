@@ -2,7 +2,7 @@ from django import forms
 
 import django_rq
 import re
-from datetime import datetime
+from datetime import date, datetime
 
 # DESABILITADO: Modelos migrados para microservice gestantes-service
 # from apps.gestantes.models import Gestante, Avaliacao
@@ -70,7 +70,11 @@ class GestanteForms(forms.Form):
         choices=VULNERABILIDADE_CHOICES,
         coerce=lambda value: value == 'True',
         widget=forms.Select(attrs={'class': 'form-select'}),
-        label='Com base nas suas visitas domiciliares, considera essa gestante em vulnerabilidade social?'
+        label='Com base nas suas visitas domiciliares, considera essa gestante em vulnerabilidade social?',
+        help_text=(
+            '<span class="fw-bold text-danger">⚠ NÃO PERGUNTAR À GESTANTE!</span><br>'
+            'Este campo deve ser marcado por você com base nas suas visitas domiciliares: '
+        ),
     )
     
     def clean_altura(self):
@@ -110,6 +114,19 @@ class GestanteForms(forms.Form):
         if peso and (peso < 30 or peso > 200):
             raise forms.ValidationError("O peso deve estar entre 30 e 200 kg.")
         return peso
+
+    def clean_data_nascimento(self):
+        data_nascimento = self.cleaned_data.get('data_nascimento')
+        if not data_nascimento:
+            return data_nascimento
+
+        hoje = date.today()
+        idade = hoje.year - data_nascimento.year - (
+            (hoje.month, hoje.day) < (data_nascimento.month, data_nascimento.day)
+        )
+        if idade < 10 or idade > 60:
+            raise forms.ValidationError("A idade deve estar entre 10 e 60 anos.")
+        return data_nascimento
 
 
 # DESABILITADO: Classes que usam modelos migrados para microservice

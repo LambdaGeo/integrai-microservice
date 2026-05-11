@@ -21,6 +21,16 @@ services:
     environment:
       - DEBUG=True
 
+  avaliacoes-service:
+    command: >
+      sh -c "pip install debugpy &&
+             python -m debugpy --listen 0.0.0.0:5680 -m uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload"
+    ports:
+      - "8004:8002"
+      - "5680:5680"
+    environment:
+      - DEBUG=True
+
   django:
     command: ["sh", "-c", "pip install debugpy && python -m debugpy --listen 0.0.0.0:5677 --wait-for-client manage.py runserver 0.0.0.0:8001 --noreload"]
     ports:

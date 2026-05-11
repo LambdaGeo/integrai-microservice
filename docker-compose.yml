@@ -202,7 +202,7 @@ services:
       retries: 5
 
   # ============================================================
-  # Servico: Avaliacoes Service (Django REST)
+  # Servico: Avaliacoes Service (FastAPI + FHIR R4)
   # ============================================================
   avaliacoes-service:
     build:
@@ -210,15 +210,17 @@ services:
       dockerfile: Dockerfile
     container_name: microservice_avaliacoes_service
     volumes:
-      - ./avaliacoes-service:/app
+      - ./avaliacoes-service/app:/app/app
+      - ./avaliacoes-service/tests:/app/tests
     ports:
       - "8004:8002"
     depends_on:
       avaliacoes-db:
         condition: service_healthy
     environment:
+      - APP_NAME=Avaliacoes Service
+      - APP_VERSION=1.0.0
       - DEBUG=True
-      - ALLOWED_HOSTS=localhost,127.0.0.1,avaliacoes-service,0.0.0.0
       - DB_HOST=avaliacoes-db
       - DB_PORT=5432
       - DB_NAME=${AVALIACOES_DB_NAME:-avaliacoes_db}
@@ -226,11 +228,12 @@ services:
       - DB_PASSWORD=${AVALIACOES_DB_PASSWORD:-postgres}
       - USERS_SERVICE_URL=http://users-service:8000
       - GESTANTES_SERVICE_URL=http://gestantes-service:8001
+      - R_API_URL=http://predition_api:8000/predict
     networks:
       - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/api/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
       interval: 10s
       timeout: 5s
       retries: 5

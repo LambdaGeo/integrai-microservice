@@ -87,7 +87,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # REST Framework
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.SessionAuthentication',
+        'avaliacoes.authentication.UsersServiceAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
@@ -97,6 +97,7 @@ REST_FRAMEWORK = {
 # Service URLs
 USERS_SERVICE_URL = os.getenv('USERS_SERVICE_URL', 'http://localhost:8000')
 GESTANTES_SERVICE_URL = os.getenv('GESTANTES_SERVICE_URL', 'http://localhost:8001')
+R_API_URL = os.getenv('R_API_URL', 'http://predition_api:8000/predict')
 
 # Redis Queue
 RQ_QUEUES = {

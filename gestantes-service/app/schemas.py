@@ -29,7 +29,7 @@ class GestanteBase(BaseModel):
             return f"+{digits}"
         if len(digits) in (10, 11):
             return f"+55{digits}"
-        raise ValueError("Telefone invalido. Informe DDD com 10 ou 11 digitos.")
+        raise ValueError("Telefone inválido. Informe DDD com 10 ou 11 dígitos.")
 
     @model_validator(mode="after")
     def validate_business_rules(self):
@@ -61,7 +61,7 @@ class GestanteUpdate(BaseModel):
             return f"+{digits}"
         if len(digits) in (10, 11):
             return f"+55{digits}"
-        raise ValueError("Telefone invalido. Informe DDD com 10 ou 11 digitos.")
+        raise ValueError("Telefone inválido. Informe DDD com 10 ou 11 dígitos.")
 
     @model_validator(mode="after")
     def validate_optional_business_rules(self):

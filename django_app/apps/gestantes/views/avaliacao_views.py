@@ -1,5 +1,5 @@
 # ======================================
-# Importacoes principais do Django
+# Importações principais do Django
 # ======================================
 from django import forms
 from django.shortcuts import render, redirect
@@ -21,7 +21,7 @@ from microservices.clients import avaliacoes_client
 
 class AvaliacaoForm(forms.Form):
     corrimento_vaginal = forms.BooleanField(required=False, label="Corrimento vaginal frequente?")
-    periodontite_carie = forms.BooleanField(required=False, label="Carie e/ou periodontite?")
+    periodontite_carie = forms.BooleanField(required=False, label="Cárie e/ou periodontite?")
     hipertensao_gestacao = forms.BooleanField(required=False, label="Hipertensão na gestação?")
     diabetes_gestacao = forms.BooleanField(required=False, label="Diabetes na gestação?")
     estresse_gestacao = forms.BooleanField(required=False, label="Estresse durante gestação?")
@@ -61,7 +61,7 @@ def gestante(request, gestante_id):
     ultima_avaliacao = avaliacoes[0] if len(avaliacoes) > 0 else None
     penultima_avaliacao = avaliacoes[1] if len(avaliacoes) > 1 else None
 
-    # Chama a camada de servico para fazer o trabalho sujo
+    # Chama a camada de serviço para fazer o trabalho sujo
     riscos, evolucao_riscos_dict = services.obter_dados_risco(
         ultima_avaliacao,
         penultima_avaliacao
@@ -125,7 +125,7 @@ def avaliacao_status(request, gestante_id):
     ultima_avaliacao = next(iter(_listar_avaliacoes(gestante_id)), None)
 
     if not ultima_avaliacao:
-        return JsonResponse({"status": "NONE", "status_text": "Sem avaliacoes"})
+        return JsonResponse({"status": "NONE", "status_text": "Sem avaliações"})
 
     atributo_status = {
         "sintese": "status_processamento_llm",
@@ -138,9 +138,9 @@ def avaliacao_status(request, gestante_id):
     status = ultima_avaliacao.get(atributo_status)
 
     status_texts = {
-        "PENDING": "Em breve, a MarIA ira preparar tudo para voce.",
-        "PROCESSING": "A MarIA esta processando as informações da gestante.",
-        "COMPLETED": "A MarIA ja analisou os resultados!",
+        "PENDING": "Em breve, a MarIA irá preparar tudo para você.",
+        "PROCESSING": "A MarIA está processando as informações da gestante.",
+        "COMPLETED": "A MarIA já analisou os resultados!",
         "FAILED": "A MarIA teve uma dificuldade ao processar a avaliação. Tente novamente daqui a pouco."
     }
 

@@ -243,3 +243,71 @@ async function configurarCompressaoFoto_(inputSelector, previewSelector) {
         }
     });
 }
+
+// Versão usada pelos formulários atuais. Mantém a foto original se a compressão falhar.
+async function configurarCompressaoFoto(inputSelector, previewSelector) {
+    const inputFoto = document.querySelector(inputSelector);
+    const preview = document.querySelector(previewSelector);
+
+    if (!inputFoto) return;
+
+    inputFoto.addEventListener("change", async (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const mostrarPreview = (arquivo) => {
+            if (!preview || !arquivo) return;
+            if (preview.dataset.objectUrl) {
+                URL.revokeObjectURL(preview.dataset.objectUrl);
+            }
+            const objectUrl = URL.createObjectURL(arquivo);
+            preview.dataset.objectUrl = objectUrl;
+            preview.src = objectUrl;
+            preview.style.display = "block";
+        };
+
+        const maxAllowedMB = 10;
+        const fileMB = file.size / (1024 * 1024);
+        if (fileMB > maxAllowedMB) {
+            alert(`A imagem é muito grande (${fileMB.toFixed(2)} MB). Tente uma menor que ${maxAllowedMB} MB.`);
+            inputFoto.value = "";
+            return;
+        }
+
+        if (typeof imageCompression !== "function") {
+            console.warn("Biblioteca de compressão indisponível. Enviando foto original.");
+            mostrarPreview(file);
+            return;
+        }
+
+        const options = {
+            maxSizeMB: 0.5,
+            maxWidthOrHeight: 1024,
+            useWebWorker: true,
+            maxIteration: 8,
+            initialQuality: 0.6,
+            exifOrientation: true,
+            fileType: "image/jpeg",
+        };
+
+        try {
+            const compressedBlob = await imageCompression(file, options);
+            const originalName = file.name.includes(".")
+                ? file.name.split(".").slice(0, -1).join(".")
+                : file.name || "foto";
+            const compressedFile = new File([compressedBlob], `${originalName}.jpg`, {
+                type: compressedBlob.type,
+                lastModified: Date.now(),
+            });
+
+            const dataTransfer = new DataTransfer();
+            dataTransfer.items.add(compressedFile);
+            inputFoto.files = dataTransfer.files;
+            mostrarPreview(compressedFile);
+        } catch (error) {
+            console.error("Erro ao comprimir imagem:", error);
+            console.warn("Falha na compressão. Mantendo a foto original para envio.");
+            mostrarPreview(file);
+        }
+    });
+}

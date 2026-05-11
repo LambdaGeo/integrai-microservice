@@ -7,10 +7,16 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.usuario import Usuario
-from app.schemas import Token, TokenWithUser, PasswordResetRequest, PasswordResetConfirm
-from app.auth import verify_password, create_access_token, get_password_hash
+from app.schemas import Token, TokenWithUser, PasswordResetRequest, PasswordResetConfirm, UsuarioResponse
+from app.auth import verify_password, create_access_token, get_password_hash, get_current_active_user
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+
+@router.get("/me", response_model=UsuarioResponse)
+async def current_user(current_user: Usuario = Depends(get_current_active_user)):
+    """Validate bearer token and return the authenticated user."""
+    return current_user
 
 
 @router.post("/token", response_model=TokenWithUser)

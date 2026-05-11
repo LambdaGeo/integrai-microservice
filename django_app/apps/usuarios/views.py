@@ -129,7 +129,7 @@ def cadastro(request):
             success, result = create_user_with_profile(user_data, profile_data)
 
             if success:
-                messages.success(request, 'Cadastro efetuado com sucesso! Faca login.')
+                messages.success(request, 'Cadastro efetuado com sucesso! Faça login.')
                 return redirect('login')
 
             messages.error(request, f'Erro ao cadastrar: {result}')
