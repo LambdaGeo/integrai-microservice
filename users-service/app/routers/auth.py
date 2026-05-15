@@ -1,4 +1,4 @@
-﻿"""
+"""
 Auth Router - Login/Token endpoints
 """
 from fastapi import APIRouter, Depends, HTTPException, status

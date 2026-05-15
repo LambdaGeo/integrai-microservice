@@ -1,13 +1,18 @@
+import base64
+import json
 import os
+import time
 
 import requests
 from django.core.cache import cache
+from django.core.files.storage import default_storage
 
 
-CACHE_TIMEOUT = 86400
+CACHE_TIMEOUT = int(os.getenv('MICROSERVICE_CACHE_TIMEOUT', '1800'))
 CACHE_KEY_USER = 'microservice_user_{}'
 CACHE_KEY_PROFILE = 'microservice_profile_{}'
 CACHE_KEY_TOKEN = 'microservice_token_{}'
+TOKEN_EXPIRY_SKEW_SECONDS = 30
 USERS_SERVICE_URL = os.getenv('USERS_SERVICE_URL', 'http://users-service:8000')
 
 
@@ -20,6 +25,52 @@ def auth_headers(token):
         'Authorization': f'Bearer {token}',
         'Content-Type': 'application/json',
     }
+
+
+def is_token_expired(token):
+    if not token:
+        return True
+
+    try:
+        payload = token.split('.')[1]
+        payload += '=' * (-len(payload) % 4)
+        data = json.loads(base64.urlsafe_b64decode(payload.encode()).decode())
+    except (IndexError, ValueError, TypeError, json.JSONDecodeError):
+        return True
+
+    expires_at = data.get('exp')
+    if not expires_at:
+        return True
+
+    return expires_at <= time.time() + TOKEN_EXPIRY_SKEW_SECONDS
+
+
+def response_error(response):
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {}
+
+    detail = payload.get('detail') if isinstance(payload, dict) else None
+    return {
+        'status_code': response.status_code,
+        'detail': detail or response.text or 'Erro no microservice',
+    }
+
+
+def clear_microservice_session(request):
+    request.session.pop('microservice_user_id', None)
+    request.session.pop('microservice_token', None)
+    request.session.pop('microservice_authenticated', None)
+    request.session.pop('show_welcome', None)
+
+
+def uploaded_file_to_profile_photo_url(uploaded_file):
+    if not uploaded_file:
+        return None
+
+    path = default_storage.save(f'usuarios/fotos/{uploaded_file.name}', uploaded_file)
+    return default_storage.url(path)
 
 
 def cache_microservice_user(username, user_data, profile_data=None, token=None):
@@ -138,14 +189,15 @@ def refresh_cached_user(username, token):
 
 
 def update_user(user_id, token, user_data):
-    if not token or not user_id:
-        return False, None
+    if not token or not user_id or is_token_expired(token):
+        return False, {'status_code': 401, 'detail': 'Sessão expirada'}
 
     try:
         response = requests.put(
             f'{USERS_SERVICE_URL}/api/v1/usuarios/{user_id}',
             json=user_data,
             headers=auth_headers(token),
+            timeout=5,
         )
     except requests.exceptions.RequestException:
         return False, None
@@ -153,12 +205,12 @@ def update_user(user_id, token, user_data):
     if response.status_code == 200:
         return True, response.json()
 
-    return False, None
+    return False, response_error(response)
 
 
 def save_profile(token, user_id, profile_data):
-    if not token or not user_id:
-        return False, None
+    if not token or not user_id or is_token_expired(token):
+        return False, {'status_code': 401, 'detail': 'Sessão expirada'}
 
     headers = auth_headers(token)
 
@@ -167,6 +219,7 @@ def save_profile(token, user_id, profile_data):
             f'{USERS_SERVICE_URL}/api/v1/usuarios/profile/me',
             json=profile_data,
             headers=headers,
+            timeout=5,
         )
 
         if response.status_code == 200:
@@ -177,13 +230,15 @@ def save_profile(token, user_id, profile_data):
                 f'{USERS_SERVICE_URL}/api/v1/usuarios/profile',
                 json={**profile_data, 'user_id': user_id},
                 headers=headers,
+                timeout=5,
             )
             if create_response.status_code in (200, 201):
                 return True, create_response.json()
+            return False, response_error(create_response)
     except requests.exceptions.RequestException:
         return False, None
 
-    return False, None
+    return False, response_error(response)
 
 
 def create_user_with_profile(user_data, profile_data):

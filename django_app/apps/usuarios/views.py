@@ -11,9 +11,12 @@ from apps.usuarios.forms import (
 )
 from apps.usuarios.services import (
     cache_microservice_user,
+    clear_microservice_session,
     create_user_with_profile,
+    is_token_expired,
     save_profile,
     update_user,
+    uploaded_file_to_profile_photo_url,
 )
 
 
@@ -37,33 +40,59 @@ def editar_perfil(request):
             token = request.user.token or request.session.get('microservice_token')
             username = request.session.get('microservice_user_id')
 
+            if is_token_expired(token):
+                clear_microservice_session(request)
+                messages.error(request, 'Sua sessão expirou. Faça login novamente para editar o perfil.')
+                return redirect('login')
+
             user_success, updated_user_data = update_user(
                 user_id=request.user.id,
                 token=token,
                 user_data={'email': form_user.cleaned_data['email']},
             )
+            if not user_success:
+                if updated_user_data and updated_user_data.get('status_code') == 401:
+                    clear_microservice_session(request)
+                    messages.error(request, 'Sua sessão expirou. Faça login novamente para editar o perfil.')
+                    return redirect('login')
+
+                detail = updated_user_data.get('detail') if updated_user_data else None
+                messages.error(request, detail or 'Erro ao atualizar usuário no microservice.')
+                return redirect('editar_perfil')
+
+            profile_data = {
+                'nome': form_profile.cleaned_data['nome'],
+                'area': form_profile.cleaned_data.get('area'),
+                'ubs': form_profile.cleaned_data.get('ubs'),
+            }
+            foto_url = uploaded_file_to_profile_photo_url(form_profile.cleaned_data.get('foto'))
+            if foto_url:
+                profile_data['foto'] = foto_url
+
             profile_success, updated_profile_data = save_profile(
                 token=token,
                 user_id=request.user.id,
-                profile_data={
-                    'nome': form_profile.cleaned_data['nome'],
-                    'area': form_profile.cleaned_data.get('area'),
-                    'ubs': form_profile.cleaned_data.get('ubs'),
-                },
+                profile_data=profile_data,
             )
+            if not profile_success:
+                if updated_profile_data and updated_profile_data.get('status_code') == 401:
+                    clear_microservice_session(request)
+                    messages.error(request, 'Sua sessão expirou. Faça login novamente para editar o perfil.')
+                    return redirect('login')
 
-            if user_success and profile_success:
-                updated_user_data['profile'] = updated_profile_data
-                cache_microservice_user(
-                    username=username,
-                    user_data=updated_user_data,
-                    profile_data=updated_profile_data,
-                    token=token,
-                )
-                messages.success(request, 'Perfil atualizado com sucesso!')
+                detail = updated_profile_data.get('detail') if updated_profile_data else None
+                messages.error(request, detail or 'Erro ao atualizar perfil no microservice.')
                 return redirect('editar_perfil')
 
-            messages.error(request, 'Erro ao atualizar perfil no microservice.')
+            updated_user_data['profile'] = updated_profile_data
+            cache_microservice_user(
+                username=username,
+                user_data=updated_user_data,
+                profile_data=updated_profile_data,
+                token=token,
+            )
+            messages.success(request, 'Perfil atualizado com sucesso!')
+            return redirect('editar_perfil')
     else:
         form_user = PerfilUpdateUserForm(initial={
             'email': request.user.email,
@@ -77,6 +106,7 @@ def editar_perfil(request):
     return render(request, 'usuarios/editar_perfil.html', {
         'form_user': form_user,
         'form_profile': form_profile,
+        'profile': profile,
     })
 
 
@@ -125,6 +155,9 @@ def cadastro(request):
                 'area': form.cleaned_data.get('area'),
                 'ubs': form.cleaned_data.get('ubs'),
             }
+            foto_url = uploaded_file_to_profile_photo_url(form.cleaned_data.get('foto'))
+            if foto_url:
+                profile_data['foto'] = foto_url
 
             success, result = create_user_with_profile(user_data, profile_data)
 

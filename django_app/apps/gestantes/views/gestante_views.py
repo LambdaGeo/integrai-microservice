@@ -280,6 +280,7 @@ def index(request):
 
     return render(request, 'gestantes/crud/painel.html', {
         "cards": gestantes,
+        "profile": request.user.profile,
         "show_welcome": show_welcome,
     })
 
@@ -292,7 +293,10 @@ def buscar(request):
     # Usar FHIR Patient para listar gestantes
     gestantes = _list_gestantes_fhir(request.user.id, nome=request.GET.get('buscar') or None)
 
-    return render(request, 'gestantes/crud/painel.html', {"cards": gestantes})
+    return render(request, 'gestantes/crud/painel.html', {
+        "cards": gestantes,
+        "profile": request.user.profile,
+    })
 
 
 # =========================================================

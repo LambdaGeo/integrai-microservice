@@ -45,8 +45,8 @@
 
 <div class="d-flex align-items-center p-3 bg-light rounded shadow mb-4">
     <div class="me-3">
-        {% if profile.foto %}
-            <img src="{{ profile.foto.url }}" alt="Foto do Agente" class="rounded-circle profile-pic-sm">
+        {% if profile.foto_url %}
+            <img src="{{ profile.foto_url }}" alt="Foto do Agente" class="rounded-circle profile-pic-sm">
         {% else %}
             <img src="{% static 'assets/imagens/usuarios/silhueta.png' %}" alt="Foto do Agente" class="rounded-circle profile-pic-sm">
         {% endif %}

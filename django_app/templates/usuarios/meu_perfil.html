@@ -10,11 +10,11 @@
         <h3 class="text-center mb-4">Meu Perfil</h3>
 
         <div class="text-center mb-4">
-            {% if profile.foto %}
-                <img src="{{ profile.foto.url }}" 
+            {% if profile.foto_url %}
+                <img src="{{ profile.foto_url }}" 
                      style="width:130px; height:130px; object-fit:cover; border-radius:50%; box-shadow:0 0 8px rgba(0,0,0,0.15);">
             {% else %}
-                <img src="{% static 'img/default_user.png' %}" 
+                <img src="{% static 'assets/imagens/usuarios/silhueta.png' %}" 
                      style="width:130px; height:130px; object-fit:cover; border-radius:50%; opacity:0.6;">
             {% endif %}
         </div>

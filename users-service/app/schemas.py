@@ -87,6 +87,7 @@ class AgenteProfileUpdate(BaseModel):
 class AgenteProfileResponse(AgenteProfileBase):
     id: int
     user_id: int
+    foto: Optional[str] = None
     primeiro_nome: str
     created_at: datetime
     updated_at: datetime

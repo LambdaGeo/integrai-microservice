@@ -2,7 +2,12 @@ from django.contrib.auth.models import AnonymousUser
 from django.utils.functional import SimpleLazyObject
 
 from apps.usuarios.backends import MicroserviceUser
-from apps.usuarios.services import get_cached_microservice_data, refresh_cached_user
+from apps.usuarios.services import (
+    clear_microservice_session,
+    get_cached_microservice_data,
+    is_token_expired,
+    refresh_cached_user,
+)
 from microservices.clients import reset_request_auth_token, set_request_auth_token
 
 
@@ -16,7 +21,12 @@ def get_microservice_user(request):
     profile_data = cache_data.get('profile_data')
     token = cache_data.get('token') or request.session.get('microservice_token')
 
-    if not user_data:
+    if is_token_expired(token):
+        clear_microservice_session(request)
+        return AnonymousUser()
+
+    should_refresh_profile = isinstance(profile_data, dict) and 'foto' not in profile_data
+    if not user_data or should_refresh_profile:
         refreshed_data = refresh_cached_user(username, token)
         if refreshed_data:
             user_data, profile_data = refreshed_data

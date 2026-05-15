@@ -55,8 +55,8 @@
                                    class="form-control" id="id_foto">
                             
                             <!-- Preview da foto atual -->
-                            {% if form_profile.instance.foto %}
-                                <img src="{{ form_profile.instance.foto.url }}" 
+                            {% if profile.foto_url %}
+                                <img src="{{ profile.foto_url }}" 
                                      id="previewFoto"
                                      style="max-width:100%; margin-top:1em; border-radius:8px;">
                             {% else %}

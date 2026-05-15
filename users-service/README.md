@@ -1,18 +1,18 @@
 # users-service
 
-API de gerenciamento de usuários e autenticação em FastAPI, com suporte FHIR R4 para Patient e Practitioner.
+API de gerenciamento de usuários e autenticação em FastAPI, com suporte FHIR R4 para `Practitioner`.
 
 ## Implementação ativa
 
 - A implementação ativa está em `app/` e usa FastAPI.
-- A implementação Django anterior foi preservada em `legacy-django/` apenas como referência histórica.
+- A implementação Django anterior foi removida do serviço por ser código legado e não participar da arquitetura em execução.
 - O serviço possui Dockerfile próprio e deve ser executado como unidade independente.
 
 ## Microsserviço
 
 - Contexto de domínio: usuários, autenticação e perfil de agente.
 - Persistência própria: banco PostgreSQL `users_db`.
-- Comunicação externa: API REST HTTP, JWT e fachada FHIR R4.
+- Comunicação externa: API REST HTTP, JWT e fachada FHIR R4 para agentes comunitários como `Practitioner`.
 - Porta interna padrão: `8000`.
 - Porta exposta no host pelo compose raiz: `8003`.
 
@@ -40,5 +40,4 @@ O `docker-compose.yml` raiz sobe também o banco isolado `users-db`, exposto em 
 - `GET /api/v1/usuarios`
 - `GET /api/v1/usuarios/{id}`
 - `GET /fhir/metadata`
-- `GET /fhir/Patient`
 - `GET /fhir/Practitioner`
