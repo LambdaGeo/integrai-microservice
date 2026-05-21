@@ -1,7 +1,7 @@
 """
 Usuario Model - SQLAlchemy
 """
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, String
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -53,3 +53,25 @@ class AgenteProfile(Base):
     
     def __repr__(self):
         return f"<AgenteProfile(id={self.id}, nome={self.nome})>"
+
+
+class AuditLog(Base):
+    """Registro de auditoria das ações relevantes do sistema."""
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    actor_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True, index=True)
+    actor_username = Column(String(11), nullable=True, index=True)
+    action = Column(String(80), nullable=False, index=True)
+    resource_type = Column(String(80), nullable=False, index=True)
+    resource_id = Column(String(120), nullable=True, index=True)
+    description = Column(String(500), nullable=True)
+    detalhes = Column(JSON, nullable=True)
+    ip_address = Column(String(45), nullable=True)
+    user_agent = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    actor = relationship("Usuario")
+
+    def __repr__(self):
+        return f"<AuditLog(id={self.id}, action={self.action})>"

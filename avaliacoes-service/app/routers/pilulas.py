@@ -7,6 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, joinedload
 
+from app.audit import registrar_auditoria
 from app.auth import authorized_gestante_ids, can_access_gestante, require_authenticated_user
 from app.database import get_db
 from app.models import Avaliacao, Pilula
@@ -68,6 +69,14 @@ async def create_pilula(
     db.add(pilula)
     db.commit()
     db.refresh(pilula)
+    await registrar_auditoria(
+        current_user,
+        "pilula.criada",
+        "pilula",
+        pilula.id,
+        "Pílula criada.",
+        {"avaliacao_id": pilula.avaliacao_id, "gestante_id": avaliacao.gestante},
+    )
     return pilula_to_dict(pilula)
 
 
@@ -103,6 +112,15 @@ async def update_pilula(
         setattr(pilula, field, value)
     db.commit()
     db.refresh(pilula)
+    if updates:
+        await registrar_auditoria(
+            current_user,
+            "pilula.atualizada",
+            "pilula",
+            pilula.id,
+            "Pílula atualizada.",
+            {"campos": sorted(updates.keys()), "avaliacao_id": pilula.avaliacao_id},
+        )
     return pilula_to_dict(pilula)
 
 
@@ -115,8 +133,18 @@ async def delete_pilula(
     pilula = db.query(Pilula).options(joinedload(Pilula.avaliacao)).filter(Pilula.id == pilula_id).first()
     if not pilula or not await can_access_gestante(pilula.avaliacao.gestante, current_user.get("access_token")):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pílula não encontrada")
+    avaliacao_id = pilula.avaliacao_id
+    gestante_id = pilula.avaliacao.gestante
     db.delete(pilula)
     db.commit()
+    await registrar_auditoria(
+        current_user,
+        "pilula.excluida",
+        "pilula",
+        pilula_id,
+        "Pílula excluída.",
+        {"avaliacao_id": avaliacao_id, "gestante_id": gestante_id},
+    )
     return None
 
 
@@ -133,4 +161,12 @@ async def marcar_pilula_enviada(
     pilula.data_envio = datetime.now(timezone.utc)
     db.commit()
     db.refresh(pilula)
+    await registrar_auditoria(
+        current_user,
+        "pilula.enviada",
+        "pilula",
+        pilula.id,
+        "Pílula marcada como enviada.",
+        {"avaliacao_id": pilula.avaliacao_id},
+    )
     return pilula_to_dict(pilula)

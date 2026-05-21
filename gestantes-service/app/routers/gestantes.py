@@ -6,6 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.audit import registrar_auditoria
 from app.auth import can_access_usuario, is_admin_user, require_authenticated_user
 from app.database import get_db
 from app.models.gestante import Gestante
@@ -63,6 +64,14 @@ async def create_gestante(
     db.add(gestante)
     db.commit()
     db.refresh(gestante)
+    await registrar_auditoria(
+        current_user,
+        "gestante.criada",
+        "gestante",
+        gestante.id,
+        "Gestante criada.",
+        {"usuario_id": gestante.usuario_id},
+    )
     return gestante
 
 
@@ -78,8 +87,10 @@ async def update_gestante(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Gestante não encontrada")
 
     updates = payload.model_dump(exclude_unset=True)
+    changed_fields = sorted(updates.keys())
     if not is_admin_user(current_user):
         updates.pop("usuario_id", None)
+        changed_fields = sorted(updates.keys())
     final_data_nascimento = updates.get("data_nascimento", gestante.data_nascimento)
     final_peso = updates.get("peso", gestante.peso)
     final_altura = updates.get("altura", gestante.altura)
@@ -90,6 +101,15 @@ async def update_gestante(
 
     db.commit()
     db.refresh(gestante)
+    if changed_fields:
+        await registrar_auditoria(
+            current_user,
+            "gestante.atualizada",
+            "gestante",
+            gestante.id,
+            "Gestante atualizada.",
+            {"campos": changed_fields},
+        )
     return gestante
 
 
@@ -105,4 +125,11 @@ async def delete_gestante(
 
     db.delete(gestante)
     db.commit()
+    await registrar_auditoria(
+        current_user,
+        "gestante.excluida",
+        "gestante",
+        gestante_id,
+        "Gestante excluída.",
+    )
     return None

@@ -196,6 +196,4 @@ class MicroserviceBackend(BaseBackend):
     def has_perm(self, user_obj, perm, obj=None):
         if not user_obj.is_active:
             return False
-        if user_obj.profile:
-            return True
         return user_obj.is_staff or user_obj.is_superuser

@@ -101,7 +101,7 @@
 
                 {% if user.is_staff %}
                 <li class="nav-item">
-                    <a class="nav-link d-flex align-items-center" href="/admin/">
+                    <a class="nav-link d-flex align-items-center" href="{% url 'custom_admin:index' %}">
                         Administração
                     </a>
                 </li>

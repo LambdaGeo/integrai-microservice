@@ -6,6 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.audit import registrar_auditoria
 from app.auth import can_access_usuario, is_admin_user, require_authenticated_user
 from app.database import get_db
 from app.models.gestante import ConsentimentoGestante, Gestante
@@ -62,6 +63,14 @@ async def create_consentimento(
     db.add(consentimento)
     db.commit()
     db.refresh(consentimento)
+    await registrar_auditoria(
+        current_user,
+        "consentimento.criado",
+        "consentimento",
+        consentimento.id,
+        "Consentimento registrado.",
+        {"gestante_id": consentimento.gestante_id, "status": consentimento.status},
+    )
     return consentimento
 
 
@@ -76,11 +85,21 @@ async def update_consentimento(
     if not consentimento or not can_access_usuario(current_user, consentimento.gestante.usuario_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Consentimento não encontrado")
 
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    updates = payload.model_dump(exclude_unset=True)
+    for field, value in updates.items():
         setattr(consentimento, field, value)
 
     db.commit()
     db.refresh(consentimento)
+    if updates:
+        await registrar_auditoria(
+            current_user,
+            "consentimento.atualizado",
+            "consentimento",
+            consentimento.id,
+            "Consentimento atualizado.",
+            {"campos": sorted(updates.keys()), "gestante_id": consentimento.gestante_id},
+        )
     return consentimento
 
 
@@ -96,4 +115,11 @@ async def delete_consentimento(
 
     db.delete(consentimento)
     db.commit()
+    await registrar_auditoria(
+        current_user,
+        "consentimento.excluido",
+        "consentimento",
+        consentimento_id,
+        "Consentimento excluído.",
+    )
     return None

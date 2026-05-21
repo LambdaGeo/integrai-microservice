@@ -107,6 +107,10 @@ services:
       - DB_USER=${USERS_DB_USER:-postgres}
       - DB_PASSWORD=${USERS_DB_PASSWORD:-postgres}
       - SECRET_KEY=${USERS_SECRET_KEY:-dev-secret-key-change-in-production}
+      - DJANGO_SUPERUSER_USERNAME=${DJANGO_SUPERUSER_USERNAME}
+      - DJANGO_SUPERUSER_CPF=${DJANGO_SUPERUSER_CPF}
+      - DJANGO_SUPERUSER_EMAIL=${DJANGO_SUPERUSER_EMAIL}
+      - DJANGO_SUPERUSER_PASSWORD=${DJANGO_SUPERUSER_PASSWORD}
       - GESTANTES_SERVICE_URL=http://gestantes-service:8001
       - AVALIACOES_SERVICE_URL=http://avaliacoes-service:8002
     networks:

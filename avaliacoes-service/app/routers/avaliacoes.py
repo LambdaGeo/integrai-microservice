@@ -6,6 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.audit import registrar_auditoria
 from app.auth import authorized_gestante_ids, can_access_gestante, require_authenticated_user
 from app.database import get_db
 from app.models import Avaliacao
@@ -76,6 +77,14 @@ async def create_avaliacao(
     db.add(avaliacao)
     db.commit()
     db.refresh(avaliacao)
+    await registrar_auditoria(
+        current_user,
+        "avaliacao.criada",
+        "avaliacao",
+        avaliacao.id,
+        "Avaliação criada.",
+        {"gestante_id": avaliacao.gestante},
+    )
     return avaliacao_to_dict(avaliacao)
 
 
@@ -109,6 +118,15 @@ async def update_avaliacao(
         setattr(avaliacao, field, value)
     db.commit()
     db.refresh(avaliacao)
+    if updates:
+        await registrar_auditoria(
+            current_user,
+            "avaliacao.atualizada",
+            "avaliacao",
+            avaliacao.id,
+            "Avaliação atualizada.",
+            {"campos": sorted(updates.keys()), "gestante_id": avaliacao.gestante},
+        )
     return avaliacao_to_dict(avaliacao)
 
 
@@ -121,6 +139,15 @@ async def delete_avaliacao(
     avaliacao = db.query(Avaliacao).filter(Avaliacao.id == avaliacao_id).first()
     if not avaliacao or not await can_access_gestante(avaliacao.gestante, current_user.get("access_token")):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Avaliação não encontrada")
+    gestante_id = avaliacao.gestante
     db.delete(avaliacao)
     db.commit()
+    await registrar_auditoria(
+        current_user,
+        "avaliacao.excluida",
+        "avaliacao",
+        avaliacao_id,
+        "Avaliação excluída.",
+        {"gestante_id": gestante_id},
+    )
     return None

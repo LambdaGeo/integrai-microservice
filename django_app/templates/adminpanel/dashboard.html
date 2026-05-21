@@ -1,0 +1,641 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<style>
+  .admin-shell {
+    max-width: 1180px;
+    margin: 92px auto 48px;
+  }
+
+  .admin-title {
+    font-size: 1.65rem;
+    font-weight: 700;
+    margin-bottom: .25rem;
+  }
+
+  .admin-subtitle {
+    color: #6c757d;
+    margin-bottom: 1.5rem;
+  }
+
+  .admin-section {
+    margin-bottom: 2rem;
+  }
+
+  .admin-section h2 {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: .75rem;
+  }
+
+  .metric-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: .75rem;
+  }
+
+  .metric {
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: .9rem 1rem;
+    background: #fff;
+  }
+
+  .metric-value {
+    display: block;
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1.1;
+  }
+
+  .metric-label {
+    color: #6c757d;
+    font-size: .85rem;
+  }
+
+  .table-wrap {
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    overflow: auto;
+    background: #fff;
+  }
+
+  .admin-table {
+    margin-bottom: 0;
+    min-width: 760px;
+  }
+
+  .admin-table th {
+    font-size: .78rem;
+    text-transform: uppercase;
+    color: #6c757d;
+    background: #f8f9fa;
+    white-space: nowrap;
+  }
+
+  .admin-table td {
+    vertical-align: middle;
+    white-space: nowrap;
+  }
+
+  .action-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .35rem;
+  }
+
+  .action-row form {
+    display: inline;
+  }
+
+  .action-row .btn {
+    --bs-btn-padding-y: .12rem;
+    --bs-btn-padding-x: .45rem;
+    --bs-btn-font-size: .78rem;
+  }
+
+  .admin-tabs {
+    gap: .35rem;
+    margin-bottom: 1rem;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+  }
+
+  .admin-tabs .nav-link {
+    color: #495057;
+    white-space: nowrap;
+  }
+
+  .admin-tabs .nav-link.active {
+    font-weight: 700;
+  }
+
+  .admin-tabs-content {
+    min-height: 360px;
+  }
+
+  .tab-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    margin-bottom: .75rem;
+  }
+
+  .filter-input {
+    max-width: 460px;
+  }
+
+  .filter-count {
+    color: #6c757d;
+    font-size: .85rem;
+    white-space: nowrap;
+  }
+</style>
+
+<div class="admin-shell">
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+    <div>
+      <h1 class="admin-title">Painel Administrativo</h1>
+      <p class="admin-subtitle">Visão consolidada dos dados distribuídos nos microserviços.</p>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2">
+      {% for service in statuses %}
+        <span class="badge rounded-pill {% if service.online %}text-bg-success{% else %}text-bg-danger{% endif %}">
+          {{ service.label }}: {{ service.detail }}
+        </span>
+      {% endfor %}
+    </div>
+  </div>
+
+  <section class="admin-section">
+    <div class="metric-grid">
+      <div class="metric">
+        <span class="metric-value">{{ counts.users }}</span>
+        <span class="metric-label">Usuários</span>
+      </div>
+      <div class="metric">
+        <span class="metric-value">{{ counts.gestantes }}</span>
+        <span class="metric-label">Gestantes</span>
+      </div>
+      <div class="metric">
+        <span class="metric-value">{{ counts.consentimentos }}</span>
+        <span class="metric-label">Consentimentos</span>
+      </div>
+      <div class="metric">
+        <span class="metric-value">{{ counts.avaliacoes }}</span>
+        <span class="metric-label">Avaliações</span>
+      </div>
+      <div class="metric">
+        <span class="metric-value">{{ counts.pilulas }}</span>
+        <span class="metric-label">Pílulas</span>
+      </div>
+      <div class="metric">
+        <span class="metric-value">{{ counts.audit_logs }}</span>
+        <span class="metric-label">Auditoria</span>
+      </div>
+    </div>
+  </section>
+
+  <ul class="nav nav-tabs admin-tabs" id="adminTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link active" id="usuarios-tab" data-bs-toggle="tab" data-bs-target="#usuarios-pane" type="button" role="tab" aria-controls="usuarios-pane" aria-selected="true">
+        Usuários <span class="badge text-bg-light">{{ counts.users }}</span>
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="gestantes-tab" data-bs-toggle="tab" data-bs-target="#gestantes-pane" type="button" role="tab" aria-controls="gestantes-pane" aria-selected="false">
+        Gestantes <span class="badge text-bg-light">{{ counts.gestantes }}</span>
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="consentimentos-tab" data-bs-toggle="tab" data-bs-target="#consentimentos-pane" type="button" role="tab" aria-controls="consentimentos-pane" aria-selected="false">
+        Consentimentos <span class="badge text-bg-light">{{ counts.consentimentos }}</span>
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="avaliacoes-tab" data-bs-toggle="tab" data-bs-target="#avaliacoes-pane" type="button" role="tab" aria-controls="avaliacoes-pane" aria-selected="false">
+        Avaliações <span class="badge text-bg-light">{{ counts.avaliacoes }}</span>
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="pilulas-tab" data-bs-toggle="tab" data-bs-target="#pilulas-pane" type="button" role="tab" aria-controls="pilulas-pane" aria-selected="false">
+        Pílulas <span class="badge text-bg-light">{{ counts.pilulas }}</span>
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="auditoria-tab" data-bs-toggle="tab" data-bs-target="#auditoria-pane" type="button" role="tab" aria-controls="auditoria-pane" aria-selected="false">
+        Auditoria <span class="badge text-bg-light">{{ counts.audit_logs }}</span>
+      </button>
+    </li>
+  </ul>
+
+  <div class="tab-content admin-tabs-content" id="adminTabsContent">
+  <section class="admin-section tab-pane fade show active" id="usuarios-pane" role="tabpanel" aria-labelledby="usuarios-tab" tabindex="0">
+    <h2>Usuários</h2>
+    <div class="tab-toolbar">
+      <div class="input-group input-group-sm filter-input">
+        <span class="input-group-text"><i class="fa-solid fa-magnifying-glass"></i></span>
+        <input class="form-control" type="search" data-admin-filter="#usuarios-table" placeholder="Filtrar usuários">
+        <button class="btn btn-outline-secondary" type="button" data-admin-clear="#usuarios-table">Limpar</button>
+      </div>
+      <span class="filter-count" data-admin-count="#usuarios-table"></span>
+    </div>
+    <div class="table-wrap">
+      <table class="table table-sm table-hover admin-table" id="usuarios-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>CPF</th>
+            <th>Email</th>
+            <th>Ativo</th>
+            <th>Staff</th>
+            <th>Superuser</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in users %}
+            <tr>
+              <td>{{ item.id }}</td>
+              <td>{{ item.username }}</td>
+              <td>{{ item.email|default:"-" }}</td>
+              <td>{% if item.is_active %}<span class="badge text-bg-success">Sim</span>{% else %}<span class="badge text-bg-secondary">Não</span>{% endif %}</td>
+              <td>{% if item.is_staff %}<span class="badge text-bg-primary">Sim</span>{% else %}-{% endif %}</td>
+              <td>{% if item.is_superuser %}<span class="badge text-bg-dark">Sim</span>{% else %}-{% endif %}</td>
+              <td>
+                <div class="action-row">
+                  {% if item.is_active %}
+                    <form method="post" action="{% url 'custom_admin:usuario_action' item.id 'deactivate' %}" onsubmit="return confirm('Desativar este usuário?');">
+                      {% csrf_token %}
+                      <button class="btn btn-outline-secondary" type="submit">Desativar</button>
+                    </form>
+                  {% else %}
+                    <form method="post" action="{% url 'custom_admin:usuario_action' item.id 'activate' %}">
+                      {% csrf_token %}
+                      <button class="btn btn-outline-success" type="submit">Ativar</button>
+                    </form>
+                  {% endif %}
+
+                  {% if item.is_staff %}
+                    <form method="post" action="{% url 'custom_admin:usuario_action' item.id 'remove_staff' %}" onsubmit="return confirm('Remover permissão staff?');">
+                      {% csrf_token %}
+                      <button class="btn btn-outline-warning" type="submit">Remover staff</button>
+                    </form>
+                  {% else %}
+                    <form method="post" action="{% url 'custom_admin:usuario_action' item.id 'make_staff' %}">
+                      {% csrf_token %}
+                      <button class="btn btn-outline-primary" type="submit">Tornar staff</button>
+                    </form>
+                  {% endif %}
+
+                  {% if item.is_superuser %}
+                    <form method="post" action="{% url 'custom_admin:usuario_action' item.id 'remove_superuser' %}" onsubmit="return confirm('Remover superuser?');">
+                      {% csrf_token %}
+                      <button class="btn btn-outline-warning" type="submit">Remover superuser</button>
+                    </form>
+                  {% else %}
+                    <form method="post" action="{% url 'custom_admin:usuario_action' item.id 'make_superuser' %}">
+                      {% csrf_token %}
+                      <button class="btn btn-outline-dark" type="submit">Tornar superuser</button>
+                    </form>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="7" class="text-muted">Nenhum usuário encontrado.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="admin-section tab-pane fade" id="gestantes-pane" role="tabpanel" aria-labelledby="gestantes-tab" tabindex="0">
+    <h2>Gestantes</h2>
+    <div class="tab-toolbar">
+      <div class="input-group input-group-sm filter-input">
+        <span class="input-group-text"><i class="fa-solid fa-magnifying-glass"></i></span>
+        <input class="form-control" type="search" data-admin-filter="#gestantes-table" placeholder="Filtrar gestantes">
+        <button class="btn btn-outline-secondary" type="button" data-admin-clear="#gestantes-table">Limpar</button>
+      </div>
+      <span class="filter-count" data-admin-count="#gestantes-table"></span>
+    </div>
+    <div class="table-wrap">
+      <table class="table table-sm table-hover admin-table" id="gestantes-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Nome</th>
+            <th>Usuário</th>
+            <th>Idade</th>
+            <th>IMC</th>
+            <th>Consentimento</th>
+            <th>Cadastro</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in gestantes %}
+            <tr>
+              <td>{{ item.id }}</td>
+              <td>{{ item.nome }}</td>
+              <td>{{ item.usuario_id|default:"-" }}</td>
+              <td>{{ item.idade }}</td>
+              <td>{{ item.imc|default:"-" }}</td>
+              <td>{% if item.consentimento_ativo %}<span class="badge text-bg-success">Ativo</span>{% else %}<span class="badge text-bg-warning">Revogado</span>{% endif %}</td>
+              <td>{{ item.data_cadastro|default:"-" }}</td>
+              <td>
+                <div class="action-row">
+                  {% if item.consentimento_ativo %}
+                    <form method="post" action="{% url 'custom_admin:set_consentimento' item.id 'revogado' %}" onsubmit="return confirm('Revogar consentimento desta gestante?');">
+                      {% csrf_token %}
+                      <button class="btn btn-outline-warning" type="submit">Revogar</button>
+                    </form>
+                  {% else %}
+                    <form method="post" action="{% url 'custom_admin:set_consentimento' item.id 'aceito' %}">
+                      {% csrf_token %}
+                      <button class="btn btn-outline-success" type="submit">Reativar</button>
+                    </form>
+                  {% endif %}
+                  <form method="post" action="{% url 'custom_admin:delete_gestante' item.id %}" onsubmit="return confirm('Remover esta gestante definitivamente?');">
+                    {% csrf_token %}
+                    <button class="btn btn-outline-danger" type="submit">Excluir</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="8" class="text-muted">Nenhuma gestante encontrada.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="admin-section tab-pane fade" id="consentimentos-pane" role="tabpanel" aria-labelledby="consentimentos-tab" tabindex="0">
+    <h2>Consentimentos</h2>
+    <div class="tab-toolbar">
+      <div class="input-group input-group-sm filter-input">
+        <span class="input-group-text"><i class="fa-solid fa-magnifying-glass"></i></span>
+        <input class="form-control" type="search" data-admin-filter="#consentimentos-table" placeholder="Filtrar consentimentos">
+        <button class="btn btn-outline-secondary" type="button" data-admin-clear="#consentimentos-table">Limpar</button>
+      </div>
+      <span class="filter-count" data-admin-count="#consentimentos-table"></span>
+    </div>
+    <div class="table-wrap">
+      <table class="table table-sm table-hover admin-table" id="consentimentos-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Gestante</th>
+            <th>Usuário</th>
+            <th>Status</th>
+            <th>Registro</th>
+            <th>Motivo</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in consentimentos %}
+            <tr>
+              <td>{{ item.id }}</td>
+              <td>{{ item.gestante_id }}</td>
+              <td>{{ item.usuario_id|default:"-" }}</td>
+              <td>
+                {% if item.status == "aceito" %}
+                  <span class="badge text-bg-success">Aceito</span>
+                {% else %}
+                  <span class="badge text-bg-warning">Revogado</span>
+                {% endif %}
+              </td>
+              <td>{{ item.data_registro|default:"-" }}</td>
+              <td>{{ item.motivo_revogacao|default:"-"|truncatechars:48 }}</td>
+              <td>
+                <div class="action-row">
+                  {% if item.status == "aceito" %}
+                    <form method="post" action="{% url 'custom_admin:set_consentimento' item.gestante_id 'revogado' %}" onsubmit="return confirm('Revogar consentimento desta gestante?');">
+                      {% csrf_token %}
+                      <button class="btn btn-outline-warning" type="submit">Revogar</button>
+                    </form>
+                  {% else %}
+                    <form method="post" action="{% url 'custom_admin:set_consentimento' item.gestante_id 'aceito' %}">
+                      {% csrf_token %}
+                      <button class="btn btn-outline-success" type="submit">Reativar</button>
+                    </form>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="7" class="text-muted">Nenhum consentimento encontrado.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="admin-section tab-pane fade" id="avaliacoes-pane" role="tabpanel" aria-labelledby="avaliacoes-tab" tabindex="0">
+    <h2>Avaliações</h2>
+    <div class="tab-toolbar">
+      <div class="input-group input-group-sm filter-input">
+        <span class="input-group-text"><i class="fa-solid fa-magnifying-glass"></i></span>
+        <input class="form-control" type="search" data-admin-filter="#avaliacoes-table" placeholder="Filtrar avaliações">
+        <button class="btn btn-outline-secondary" type="button" data-admin-clear="#avaliacoes-table">Limpar</button>
+      </div>
+      <span class="filter-count" data-admin-count="#avaliacoes-table"></span>
+    </div>
+    <div class="table-wrap">
+      <table class="table table-sm table-hover admin-table" id="avaliacoes-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Gestante</th>
+            <th>Data</th>
+            <th>LLM</th>
+            <th>Pílulas</th>
+            <th>Top fatores</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in avaliacoes %}
+            <tr>
+              <td>{{ item.id }}</td>
+              <td>{{ item.gestante|default:"-" }}</td>
+              <td>{{ item.data_aplicacao|default:"-" }}</td>
+              <td>{{ item.status_processamento_llm|default:"-" }}</td>
+              <td>{{ item.status_processamento_pills|default:"-" }}</td>
+              <td>{{ item.top_fatores_str|default:"-"|truncatechars:48 }}</td>
+              <td>
+                <div class="action-row">
+                  <form method="post" action="{% url 'custom_admin:delete_avaliacao' item.id %}" onsubmit="return confirm('Remover esta avaliação?');">
+                    {% csrf_token %}
+                    <button class="btn btn-outline-danger" type="submit">Excluir</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="7" class="text-muted">Nenhuma avaliação encontrada.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="admin-section tab-pane fade" id="pilulas-pane" role="tabpanel" aria-labelledby="pilulas-tab" tabindex="0">
+    <h2>Pílulas</h2>
+    <div class="tab-toolbar">
+      <div class="input-group input-group-sm filter-input">
+        <span class="input-group-text"><i class="fa-solid fa-magnifying-glass"></i></span>
+        <input class="form-control" type="search" data-admin-filter="#pilulas-table" placeholder="Filtrar pílulas">
+        <button class="btn btn-outline-secondary" type="button" data-admin-clear="#pilulas-table">Limpar</button>
+      </div>
+      <span class="filter-count" data-admin-count="#pilulas-table"></span>
+    </div>
+    <div class="table-wrap">
+      <table class="table table-sm table-hover admin-table" id="pilulas-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Avaliação</th>
+            <th>Título</th>
+            <th>Semana</th>
+            <th>Status</th>
+            <th>Geração</th>
+            <th>Envio</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in pilulas %}
+            <tr>
+              <td>{{ item.id }}</td>
+              <td>{{ item.avaliacao_id|default:item.avaliacao }}</td>
+              <td>{{ item.titulo|default:"-"|truncatechars:48 }}</td>
+              <td>{{ item.semana_ord|default:item.semana_num }}</td>
+              <td>{{ item.status|default:"-" }}</td>
+              <td>{{ item.data_geracao|default:"-" }}</td>
+              <td>{{ item.data_envio|default:"-" }}</td>
+              <td>
+                <div class="action-row">
+                  {% if item.status != "enviada" %}
+                    <form method="post" action="{% url 'custom_admin:mark_pilula_sent' item.id %}">
+                      {% csrf_token %}
+                      <button class="btn btn-outline-success" type="submit">Marcar enviada</button>
+                    </form>
+                  {% endif %}
+                  <form method="post" action="{% url 'custom_admin:delete_pilula' item.id %}" onsubmit="return confirm('Remover esta pílula?');">
+                    {% csrf_token %}
+                    <button class="btn btn-outline-danger" type="submit">Excluir</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="8" class="text-muted">Nenhuma pílula encontrada.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="admin-section tab-pane fade" id="auditoria-pane" role="tabpanel" aria-labelledby="auditoria-tab" tabindex="0">
+    <h2>Auditoria</h2>
+    <div class="tab-toolbar">
+      <div class="input-group input-group-sm filter-input">
+        <span class="input-group-text"><i class="fa-solid fa-magnifying-glass"></i></span>
+        <input class="form-control" type="search" data-admin-filter="#auditoria-table" placeholder="Filtrar auditoria">
+        <button class="btn btn-outline-secondary" type="button" data-admin-clear="#auditoria-table">Limpar</button>
+      </div>
+      <span class="filter-count" data-admin-count="#auditoria-table"></span>
+    </div>
+    <div class="table-wrap">
+      <table class="table table-sm table-hover admin-table" id="auditoria-table">
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Usuário</th>
+            <th>Ação</th>
+            <th>Recurso</th>
+            <th>Descrição</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in audit_logs %}
+            <tr>
+              <td>{{ item.created_at|default:"-" }}</td>
+              <td>{{ item.actor_username|default:"Sistema" }}</td>
+              <td>{{ item.action }}</td>
+              <td>{{ item.resource_type }}{% if item.resource_id %} #{{ item.resource_id }}{% endif %}</td>
+              <td>{{ item.description|default:"-"|truncatechars:80 }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="5" class="text-muted">Nenhum evento de auditoria encontrado.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  </div>
+</div>
+
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const normalize = (value) => (value || "")
+      .toString()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+
+    const dataRows = (table) => Array.from(table.tBodies[0].rows).filter((row) => {
+      return !row.dataset.filterEmpty && !row.querySelector("td[colspan]");
+    });
+
+    const removeFilterEmptyRow = (table) => {
+      const emptyRow = table.tBodies[0].querySelector("[data-filter-empty='true']");
+      if (emptyRow) {
+        emptyRow.remove();
+      }
+    };
+
+    const updateCount = (selector, total, visible) => {
+      const count = document.querySelector(`[data-admin-count="${selector}"]`);
+      if (count) {
+        count.textContent = `${visible} de ${total} item(ns)`;
+      }
+    };
+
+    const applyFilter = (input) => {
+      const selector = input.dataset.adminFilter;
+      const table = document.querySelector(selector);
+      if (!table || !table.tBodies.length) {
+        return;
+      }
+
+      removeFilterEmptyRow(table);
+
+      const query = normalize(input.value);
+      const rows = dataRows(table);
+      let visible = 0;
+
+      rows.forEach((row) => {
+        const matches = !query || normalize(row.textContent).includes(query);
+        row.hidden = !matches;
+        if (matches) {
+          visible += 1;
+        }
+      });
+
+      if (query && rows.length && !visible) {
+        const emptyRow = table.tBodies[0].insertRow();
+        const cell = emptyRow.insertCell();
+        emptyRow.dataset.filterEmpty = "true";
+        cell.colSpan = table.tHead.rows[0].cells.length;
+        cell.className = "text-muted";
+        cell.textContent = "Nenhum resultado encontrado para este filtro.";
+      }
+
+      updateCount(selector, rows.length, visible);
+    };
+
+    document.querySelectorAll("[data-admin-filter]").forEach((input) => {
+      applyFilter(input);
+      input.addEventListener("input", () => applyFilter(input));
+    });
+
+    document.querySelectorAll("[data-admin-clear]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const input = document.querySelector(`[data-admin-filter="${button.dataset.adminClear}"]`);
+        if (input) {
+          input.value = "";
+          applyFilter(input);
+          input.focus();
+        }
+      });
+    });
+  });
+</script>
+{% endblock %}

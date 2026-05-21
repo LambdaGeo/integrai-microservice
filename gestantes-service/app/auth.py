@@ -44,7 +44,9 @@ async def require_authenticated_user(
             detail="Access denied",
         )
 
-    return response.json()
+    user = response.json()
+    user["access_token"] = credentials.credentials
+    return user
 
 
 def is_admin_user(user: dict) -> bool:

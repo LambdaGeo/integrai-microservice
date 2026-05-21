@@ -2,7 +2,7 @@
 Usuario Schemas - Pydantic models for API
 """
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
+from typing import Any, Dict, Optional
 from datetime import datetime
 
 
@@ -48,6 +48,8 @@ class UsuarioCreate(UsuarioBase):
 class UsuarioUpdate(BaseModel):
     email: Optional[EmailStr] = None
     is_active: Optional[bool] = None
+    is_staff: Optional[bool] = None
+    is_superuser: Optional[bool] = None
 
 
 class UsuarioResponse(UsuarioBase):
@@ -101,5 +103,27 @@ class AgenteProfileResponse(AgenteProfileBase):
 class UsuarioWithProfileResponse(UsuarioResponse):
     profile: Optional[AgenteProfileResponse] = None
     
+    class Config:
+        from_attributes = True
+
+
+# ==================== Auditoria ====================
+
+class AuditLogCreate(BaseModel):
+    action: str = Field(..., max_length=80)
+    resource_type: str = Field(..., max_length=80)
+    resource_id: Optional[str] = Field(None, max_length=120)
+    description: Optional[str] = Field(None, max_length=500)
+    detalhes: Optional[Dict[str, Any]] = None
+
+
+class AuditLogResponse(AuditLogCreate):
+    id: int
+    actor_id: Optional[int] = None
+    actor_username: Optional[str] = None
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
+    created_at: datetime
+
     class Config:
         from_attributes = True

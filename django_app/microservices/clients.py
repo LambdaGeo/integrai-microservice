@@ -129,6 +129,19 @@ class UsersServiceClient(BaseServiceClient):
     def list_usuarios(self, params: Optional[Dict] = None) -> List[Dict]:
         result = self._request('GET', '/api/v1/usuarios', params=params)
         return result if result else []
+
+    def update_usuario(self, usuario_id: int, data: Dict) -> Optional[Dict]:
+        return self._request('PUT', f'/api/v1/usuarios/{usuario_id}', data=data)
+
+    def delete_usuario(self, usuario_id: int) -> Optional[Dict]:
+        return self._request('DELETE', f'/api/v1/usuarios/{usuario_id}')
+
+    def list_audit_logs(self, params: Optional[Dict] = None) -> List[Dict]:
+        result = self._request('GET', '/api/v1/audit', params=params)
+        return result if result else []
+
+    def create_audit_log(self, data: Dict) -> Optional[Dict]:
+        return self._request('POST', '/api/v1/audit', data=data)
     
     def get_agente(self, agente_id: int) -> Optional[Dict]:
         return self._request('GET', f'/api/v1/usuarios/{agente_id}')
@@ -184,6 +197,9 @@ class AvaliacoesServiceClient(BaseServiceClient):
     def __init__(self):
         url = os.getenv('AVALIACOES_SERVICE_URL', 'http://localhost:8002')
         super().__init__(url)
+
+    def health(self) -> Optional[Dict]:
+        return self._request('GET', '/health')
     
     def get_avaliacao(self, avaliacao_id: int) -> Optional[Dict]:
         observation = self._request('GET', f'/fhir/Observation/{avaliacao_id}')
@@ -213,6 +229,12 @@ class AvaliacoesServiceClient(BaseServiceClient):
     
     def marcar_pilula_enviada(self, pilula_id: int) -> Optional[Dict]:
         return self._request('POST', f'/api/pilulas/{pilula_id}/marcar_enviada/')
+
+    def delete_pilula(self, pilula_id: int) -> Optional[Dict]:
+        return self._request('DELETE', f'/api/pilulas/{pilula_id}/')
+
+    def delete_avaliacao(self, avaliacao_id: int) -> Optional[Dict]:
+        return self._request('DELETE', f'/api/avaliacoes/{avaliacao_id}/')
 
 
     def _avaliacao_params_to_fhir(self, params: Dict) -> Dict:

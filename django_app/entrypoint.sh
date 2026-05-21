@@ -1,39 +1,19 @@
 #!/bin/bash
 set -e
 
-echo "⏳ Aguardando o banco de dados estar disponível..."
+echo "Aguardando o banco de dados estar disponível..."
 until pg_isready -h db -p 5432 -U "$DB_USER"; do
   sleep 1
 done
-echo "✅ Banco de dados pronto!"
+echo "Banco de dados pronto!"
 
-echo "🚀 Executando migrações..."
+echo "Executando migrações..."
 python manage.py migrate --noinput
 
-echo "🛠 Criando superusuário Django se não existir..."
-# python manage.py shell <<'EOF'
-# from django.contrib.auth import get_user_model
-# import os
+echo "Superusuário gerenciado pelo users-service."
 
-# User = get_user_model()
-
-# username = os.environ.get('DJANGO_SUPERUSER_USERNAME') or os.environ.get('DJANGO_SUPERUSER_CPF')
-# email = os.environ.get('DJANGO_SUPERUSER_EMAIL')
-# password = os.environ.get('DJANGO_SUPERUSER_PASSWORD')
-
-# if username and password and not User.objects.filter(username=username).exists():
-#     User.objects.create_superuser(
-#         username=username,
-#         email=email,
-#         password=password
-#     )
-#     print("Superusuário criado!")
-# else:
-#     print("Superusuário já existe ou variáveis faltando.")
-# EOF
-
-echo "📦 Coletando arquivos estáticos..."
+echo "Coletando arquivos estáticos..."
 python manage.py collectstatic --noinput
 
-echo "🔧 Iniciando servidor Django..."
+echo "Iniciando servidor Django..."
 exec python manage.py runserver 0.0.0.0:8001
